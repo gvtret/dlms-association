@@ -12,6 +12,7 @@ The layer shall:
 - construct AARQ APDUs with xDLMS InitiateRequest
 - send AARQ and receive AARE
 - decode AARE result, diagnostic, and xDLMS InitiateResponse
+- construct RLRQ APDUs and accept RLRE for clean release
 - expose negotiated association parameters
 - reject invalid state transitions
 - keep APDU codec details delegated to `dlms-apdu`
@@ -59,6 +60,11 @@ Rules:
 - failed send, receive, or decode returns to `Open`
 - rejected AARE returns to `Open`
 - `Close()` closes the lower channel and returns to `Closed`
+- `Release()` is valid only from `Associated`
+- successful `Release()` sends RLRQ, receives RLRE, closes the lower channel,
+  clears negotiated context, and returns to `Closed`
+- failed `Release()` leaves the client `Associated` so the caller can fall back
+  to `Close()`
 
 ## 5. Security Boundary
 
@@ -73,7 +79,6 @@ later association phase with explicit interfaces.
 
 - C API
 - server-side acceptor
-- release association
 - HLS challenge/response
 - global or dedicated ciphering
 - retry policies for failed AARE receive

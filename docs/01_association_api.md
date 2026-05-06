@@ -58,12 +58,18 @@ dlms::association::AssociationClient client(channel, options);
 
 client.Open();
 client.Establish();
+client.Release();
 
 const dlms::association::AssociationResult& result =
   client.Result();
 
 client.Close();
 ```
+
+`Release()` performs the confirmed association release exchange. It sends RLRQ,
+expects RLRE, and closes the lower APDU channel on success. If sending,
+receiving, or decoding RLRE fails, the client remains associated so `Close()`
+can still be used as an unconfirmed fallback.
 
 `AssociationClient` does not own the lower channel object. The caller must keep
 the channel alive for the lifetime of the association client.

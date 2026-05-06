@@ -14,6 +14,12 @@ Required first-phase tests:
 - `Establish()` from `Closed` returns `InvalidState`
 - repeated `Establish()` after success returns `AlreadyAssociated`
 - unsupported authentication mode returns `UnsupportedAuthentication`
+- `Release()` from non-associated states returns `InvalidState`
+- successful `Release()` sends RLRQ, receives RLRE, closes the channel, and
+  returns to `Closed`
+- malformed or non-RLRE release response returns `DecodeFailed`
+- release receive failure leaves the client `Associated` so `Close()` can be
+  used as fallback
 
 ## 2. Integration Tests
 

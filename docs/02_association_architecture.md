@@ -44,6 +44,8 @@ stateDiagram-v2
   Open --> Associating: Establish
   Associating --> Associated: AARE accepted
   Associating --> Open: send/receive/decode/reject
+  Associated --> Closed: Release ok
+  Associated --> Associated: Release send/receive/decode failure
   Associated --> Closed: Close
   Open --> Closed: Close
 ```
@@ -56,6 +58,7 @@ classDiagram
     +Open() AssociationStatus
     +Close() AssociationStatus
     +Establish() AssociationStatus
+    +Release() AssociationStatus
     +State() AssociationState
     +Result() AssociationResult
   }
