@@ -9,6 +9,7 @@ option(DLMS_USE_SYSTEM_GTEST "Use system-installed GoogleTest" OFF)
 
 add_library(dlms_association
   src/association/association_client.cpp
+  src/association/association_c_api.cpp
   src/association/association_status.cpp
   src/association/association_types.cpp)
 
