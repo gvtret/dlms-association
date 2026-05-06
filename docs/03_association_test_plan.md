@@ -20,6 +20,11 @@ Required first-phase tests:
 - malformed or non-RLRE release response returns `DecodeFailed`
 - release receive failure leaves the client `Associated` so `Close()` can be
   used as fallback
+- C API status values mirror the C++ status enum values
+- C API default options expose the same no-authentication LN proposal
+- C API callback client can open, establish, release, and close
+- C API rejects missing required callbacks and null handles
+- C API public header compiles as C
 
 ## 2. Integration Tests
 

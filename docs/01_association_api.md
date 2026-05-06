@@ -4,6 +4,7 @@
 
 ```text
 include/dlms/association/association_client.hpp
+include/dlms/association/association_c_api.h
 include/dlms/association/association_status.hpp
 include/dlms/association/association_types.hpp
 ```
@@ -73,3 +74,28 @@ can still be used as an unconfirmed fallback.
 
 `AssociationClient` does not own the lower channel object. The caller must keep
 the channel alive for the lifetime of the association client.
+
+## 6. C API
+
+The C ABI mirrors the C++ client lifecycle through an opaque
+`dlms_association_client_t` handle:
+
+```c
+dlms_association_client_t* client =
+  dlms_association_create_client_from_callbacks(&callbacks, &options);
+
+dlms_association_open(client);
+dlms_association_establish(client);
+dlms_association_release(client);
+dlms_association_close(client);
+dlms_association_destroy_client(client);
+```
+
+The C API does not own a `dlms-profile` channel from another C ABI. It owns a
+small callback-based APDU channel adapter supplied by the caller. Callback
+return values are association statuses and are mapped to profile-channel
+statuses internally.
+
+Use `dlms_association_default_options()` before changing individual fields.
+Use `dlms_association_get_result()` after a successful establish to copy the
+negotiated context into a caller-owned result struct.
