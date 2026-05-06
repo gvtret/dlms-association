@@ -8,6 +8,7 @@
 struct dlms_association_client_t
 {
   dlms::profile::IApduChannel* channel;
+  dlms::association::IHighLevelSecurityStrategy* highLevelSecurity;
   dlms::association::AssociationClient* client;
 };
 
@@ -101,8 +102,76 @@ dlms::association::AuthenticationMode ToCppAuthenticationMode(
   return dlms::association::AuthenticationMode::None;
 }
 
+dlms::association::HighLevelSecurityMechanism ToCppHlsMechanism(
+  dlms_association_hls_mechanism_t mechanism)
+{
+  switch (mechanism) {
+  case DLMS_ASSOCIATION_HLS_MECHANISM_MD5:
+    return dlms::association::HighLevelSecurityMechanism::HlsMd5;
+  case DLMS_ASSOCIATION_HLS_MECHANISM_SHA1:
+    return dlms::association::HighLevelSecurityMechanism::HlsSha1;
+  case DLMS_ASSOCIATION_HLS_MECHANISM_GMAC:
+    return dlms::association::HighLevelSecurityMechanism::HlsGmac;
+  case DLMS_ASSOCIATION_HLS_MECHANISM_UNKNOWN:
+    return dlms::association::HighLevelSecurityMechanism::Unknown;
+  }
+
+  return dlms::association::HighLevelSecurityMechanism::Unknown;
+}
+
+class CHighLevelSecurityStrategy
+  : public dlms::association::IHighLevelSecurityStrategy
+{
+public:
+  CHighLevelSecurityStrategy(
+    const dlms_association_hls_callbacks_t& callbacks,
+    void* userData)
+    : callbacks_(callbacks)
+    , userData_(userData)
+  {
+  }
+
+  dlms::association::HighLevelSecurityMechanism Mechanism() const override
+  {
+    return ToCppHlsMechanism(callbacks_.mechanism(userData_));
+  }
+
+  dlms::association::AssociationStatus BuildInitialChallenge(
+    std::vector<std::uint8_t>& output) const override
+  {
+    std::vector<std::uint8_t> buffer(kDefaultReceiveBufferSize);
+    std::size_t writtenSize = 0u;
+    const dlms_association_status_t status =
+      callbacks_.build_initial_challenge(userData_,
+                                         &buffer[0],
+                                         buffer.size(),
+                                         &writtenSize);
+    if (status != DLMS_ASSOCIATION_STATUS_OK) {
+      return ToCppStatus(status);
+    }
+    if (writtenSize > buffer.size()) {
+      return dlms::association::AssociationStatus::InvalidArgument;
+    }
+
+    output.assign(buffer.begin(), buffer.begin() + writtenSize);
+    return dlms::association::AssociationStatus::Ok;
+  }
+
+private:
+  dlms_association_hls_callbacks_t callbacks_;
+  void* userData_;
+};
+
+bool ValidHlsCallbacks(const dlms_association_hls_callbacks_t* callbacks)
+{
+  return callbacks != 0 &&
+    callbacks->mechanism != 0 &&
+    callbacks->build_initial_challenge != 0;
+}
+
 dlms::association::AssociationOptions ToCppOptions(
-  const dlms_association_options_t* options)
+  const dlms_association_options_t* options,
+  const dlms::association::IHighLevelSecurityStrategy* highLevelSecurity)
 {
   dlms::association::AssociationOptions cppOptions =
     dlms::association::DefaultAssociationOptions();
@@ -114,6 +183,14 @@ dlms::association::AssociationOptions ToCppOptions(
     ToCppApplicationContext(options->application_context);
   cppOptions.authenticationMode =
     ToCppAuthenticationMode(options->authentication_mode);
+  if (options->low_level_security_credential != 0 &&
+      options->low_level_security_credential_size != 0) {
+    cppOptions.lowLevelSecurityCredential.assign(
+      options->low_level_security_credential,
+      options->low_level_security_credential +
+        options->low_level_security_credential_size);
+  }
+  cppOptions.highLevelSecurity = highLevelSecurity;
   cppOptions.proposedDlmsVersionNumber =
     options->proposed_dlms_version_number;
   cppOptions.proposedConformance.bytes[0] = options->proposed_conformance[0];
@@ -257,6 +334,10 @@ void dlms_association_default_options(
   options->application_context =
     DLMS_ASSOCIATION_APPLICATION_CONTEXT_LN_NO_CIPHERING;
   options->authentication_mode = DLMS_ASSOCIATION_AUTHENTICATION_NONE;
+  options->low_level_security_credential = 0;
+  options->low_level_security_credential_size = 0u;
+  options->high_level_security = 0;
+  options->high_level_security_user_data = 0;
   options->proposed_dlms_version_number =
     cppOptions.proposedDlmsVersionNumber;
   options->proposed_conformance[0] = cppOptions.proposedConformance.bytes[0];
@@ -281,12 +362,20 @@ dlms_association_client_t* dlms_association_create_client_from_callbacks(
                               options == 0
                                 ? kDefaultReceiveBufferSize
                                 : options->receive_buffer_size));
+    std::unique_ptr<dlms::association::IHighLevelSecurityStrategy> hls;
+    if (options != 0 && ValidHlsCallbacks(options->high_level_security)) {
+      hls.reset(new CHighLevelSecurityStrategy(
+        *options->high_level_security,
+        options->high_level_security_user_data));
+    }
     std::unique_ptr<dlms::association::AssociationClient> client(
       new dlms::association::AssociationClient(*channel,
-                                               ToCppOptions(options)));
+                                               ToCppOptions(options,
+                                                            hls.get())));
     std::unique_ptr<dlms_association_client_t> handle(
       new dlms_association_client_t);
     handle->channel = channel.release();
+    handle->highLevelSecurity = hls.release();
     handle->client = client.release();
     return handle.release();
   } catch (...) {
@@ -303,6 +392,8 @@ void dlms_association_destroy_client(
 
   delete client->client;
   client->client = 0;
+  delete client->highLevelSecurity;
+  client->highLevelSecurity = 0;
   delete client->channel;
   client->channel = 0;
   delete client;

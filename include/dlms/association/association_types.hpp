@@ -4,6 +4,7 @@
 #include "dlms/association/association_status.hpp"
 
 #include <cstdint>
+#include <vector>
 
 namespace dlms {
 namespace association {
@@ -28,10 +29,32 @@ enum class AuthenticationMode
   HighLevelSecurity
 };
 
+enum class HighLevelSecurityMechanism
+{
+  Unknown,
+  HlsMd5,
+  HlsSha1,
+  HlsGmac
+};
+
+class IHighLevelSecurityStrategy
+{
+public:
+  virtual ~IHighLevelSecurityStrategy()
+  {
+  }
+
+  virtual HighLevelSecurityMechanism Mechanism() const = 0;
+  virtual AssociationStatus BuildInitialChallenge(
+    std::vector<std::uint8_t>& output) const = 0;
+};
+
 struct AssociationOptions
 {
   ApplicationContext applicationContext;
   AuthenticationMode authenticationMode;
+  std::vector<std::uint8_t> lowLevelSecurityCredential;
+  const IHighLevelSecurityStrategy* highLevelSecurity;
   std::uint8_t proposedDlmsVersionNumber;
   dlms::apdu::AxdrConformance proposedConformance;
   std::uint16_t clientMaxReceivePduSize;

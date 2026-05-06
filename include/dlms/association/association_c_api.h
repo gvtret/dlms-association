@@ -49,10 +49,36 @@ typedef enum dlms_association_authentication_mode_t
   DLMS_ASSOCIATION_AUTHENTICATION_HIGH_LEVEL_SECURITY = 2
 } dlms_association_authentication_mode_t;
 
+typedef enum dlms_association_hls_mechanism_t
+{
+  DLMS_ASSOCIATION_HLS_MECHANISM_UNKNOWN = 0,
+  DLMS_ASSOCIATION_HLS_MECHANISM_MD5 = 1,
+  DLMS_ASSOCIATION_HLS_MECHANISM_SHA1 = 2,
+  DLMS_ASSOCIATION_HLS_MECHANISM_GMAC = 3
+} dlms_association_hls_mechanism_t;
+
+typedef dlms_association_hls_mechanism_t (*dlms_association_hls_mechanism_fn)(
+  void* user_data);
+typedef dlms_association_status_t (*dlms_association_hls_challenge_fn)(
+  void* user_data,
+  uint8_t* output,
+  size_t output_size,
+  size_t* written_size);
+
+typedef struct dlms_association_hls_callbacks_t
+{
+  dlms_association_hls_mechanism_fn mechanism;
+  dlms_association_hls_challenge_fn build_initial_challenge;
+} dlms_association_hls_callbacks_t;
+
 typedef struct dlms_association_options_t
 {
   dlms_association_application_context_t application_context;
   dlms_association_authentication_mode_t authentication_mode;
+  const uint8_t* low_level_security_credential;
+  size_t low_level_security_credential_size;
+  const dlms_association_hls_callbacks_t* high_level_security;
+  void* high_level_security_user_data;
   uint8_t proposed_dlms_version_number;
   uint8_t proposed_conformance[3];
   uint16_t client_max_receive_pdu_size;

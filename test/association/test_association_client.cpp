@@ -11,6 +11,40 @@
 
 namespace {
 
+class FakeHlsStrategy
+  : public dlms::association::IHighLevelSecurityStrategy
+{
+public:
+  FakeHlsStrategy()
+    : mechanism(dlms::association::HighLevelSecurityMechanism::HlsGmac)
+    , status(dlms::association::AssociationStatus::Ok)
+    , mechanismCalls(0)
+    , challengeCalls(0)
+  {
+    challenge.push_back(0x01);
+  }
+
+  dlms::association::HighLevelSecurityMechanism Mechanism() const override
+  {
+    ++mechanismCalls;
+    return mechanism;
+  }
+
+  dlms::association::AssociationStatus BuildInitialChallenge(
+    std::vector<std::uint8_t>& output) const override
+  {
+    ++challengeCalls;
+    output = challenge;
+    return status;
+  }
+
+  dlms::association::HighLevelSecurityMechanism mechanism;
+  dlms::association::AssociationStatus status;
+  std::vector<std::uint8_t> challenge;
+  mutable int mechanismCalls;
+  mutable int challengeCalls;
+};
+
 class FakeApduChannel : public dlms::profile::IApduChannel
 {
 public:
@@ -233,6 +267,103 @@ TEST(AssociationClient, UnsupportedAuthenticationIsRejectedBeforeSend)
   ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
   EXPECT_EQ(dlms::association::AssociationStatus::UnsupportedAuthentication,
             client.Establish());
+  EXPECT_EQ(0, channel.sendCalls);
+}
+
+TEST(AssociationClient, LowLevelSecurityWithoutCredentialIsRejectedBeforeSend)
+{
+  FakeApduChannel channel;
+  dlms::association::AssociationOptions options =
+    dlms::association::DefaultAssociationOptions();
+  options.authenticationMode =
+    dlms::association::AuthenticationMode::LowLevelSecurity;
+
+  dlms::association::AssociationClient client(channel, options);
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  EXPECT_EQ(dlms::association::AssociationStatus::UnsupportedAuthentication,
+            client.Establish());
+  EXPECT_EQ(0, channel.sendCalls);
+}
+
+TEST(AssociationClient, LowLevelSecurityCredentialIsModeledButRejected)
+{
+  FakeApduChannel channel;
+  dlms::association::AssociationOptions options =
+    dlms::association::DefaultAssociationOptions();
+  options.authenticationMode =
+    dlms::association::AuthenticationMode::LowLevelSecurity;
+  options.lowLevelSecurityCredential.push_back('p');
+  options.lowLevelSecurityCredential.push_back('w');
+
+  dlms::association::AssociationClient client(channel, options);
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  EXPECT_EQ(dlms::association::AssociationStatus::UnsupportedAuthentication,
+            client.Establish());
+  EXPECT_EQ(0, channel.sendCalls);
+}
+
+TEST(AssociationClient, HighLevelSecurityStrategyIsDelegatedBeforeReject)
+{
+  FakeApduChannel channel;
+  FakeHlsStrategy strategy;
+  dlms::association::AssociationOptions options =
+    dlms::association::DefaultAssociationOptions();
+  options.authenticationMode =
+    dlms::association::AuthenticationMode::HighLevelSecurity;
+  options.highLevelSecurity = &strategy;
+
+  dlms::association::AssociationClient client(channel, options);
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  EXPECT_EQ(dlms::association::AssociationStatus::UnsupportedAuthentication,
+            client.Establish());
+  EXPECT_EQ(1, strategy.mechanismCalls);
+  EXPECT_EQ(1, strategy.challengeCalls);
+  EXPECT_EQ(0, channel.sendCalls);
+}
+
+TEST(AssociationClient, HighLevelSecurityStrategyFailureIsRejected)
+{
+  FakeApduChannel channel;
+  FakeHlsStrategy strategy;
+  strategy.status = dlms::association::AssociationStatus::InternalError;
+  dlms::association::AssociationOptions options =
+    dlms::association::DefaultAssociationOptions();
+  options.authenticationMode =
+    dlms::association::AuthenticationMode::HighLevelSecurity;
+  options.highLevelSecurity = &strategy;
+
+  dlms::association::AssociationClient client(channel, options);
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  EXPECT_EQ(dlms::association::AssociationStatus::UnsupportedAuthentication,
+            client.Establish());
+  EXPECT_EQ(1, strategy.mechanismCalls);
+  EXPECT_EQ(1, strategy.challengeCalls);
+  EXPECT_EQ(0, channel.sendCalls);
+}
+
+TEST(AssociationClient, HighLevelSecurityUnsupportedMechanismIsRejected)
+{
+  FakeApduChannel channel;
+  FakeHlsStrategy strategy;
+  strategy.mechanism =
+    dlms::association::HighLevelSecurityMechanism::Unknown;
+  dlms::association::AssociationOptions options =
+    dlms::association::DefaultAssociationOptions();
+  options.authenticationMode =
+    dlms::association::AuthenticationMode::HighLevelSecurity;
+  options.highLevelSecurity = &strategy;
+
+  dlms::association::AssociationClient client(channel, options);
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  EXPECT_EQ(dlms::association::AssociationStatus::UnsupportedAuthentication,
+            client.Establish());
+  EXPECT_EQ(1, strategy.mechanismCalls);
+  EXPECT_EQ(0, strategy.challengeCalls);
   EXPECT_EQ(0, channel.sendCalls);
 }
 

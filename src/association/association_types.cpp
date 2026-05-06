@@ -13,6 +13,8 @@ AssociationOptions DefaultAssociationOptions()
   AssociationOptions options;
   options.applicationContext = ApplicationContext::LogicalNameNoCiphering;
   options.authenticationMode = AuthenticationMode::None;
+  options.lowLevelSecurityCredential.clear();
+  options.highLevelSecurity = 0;
   options.proposedDlmsVersionNumber = request.proposedDlmsVersionNumber;
   options.proposedConformance = request.proposedConformance;
   options.clientMaxReceivePduSize = request.clientMaxReceivePduSize;

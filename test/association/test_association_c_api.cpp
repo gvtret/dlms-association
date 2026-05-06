@@ -19,6 +19,15 @@ struct CallbackChannel
   dlms_association_status_t receiveStatus;
 };
 
+struct CallbackHls
+{
+  int mechanismCalls;
+  int challengeCalls;
+  dlms_association_hls_mechanism_t mechanism;
+  dlms_association_status_t challengeStatus;
+  std::vector<std::uint8_t> challenge;
+};
+
 std::vector<std::uint8_t> MakeAareBytes()
 {
   const std::uint8_t kAare[] = {
@@ -106,6 +115,47 @@ dlms_association_channel_callbacks_t MakeCallbacks(CallbackChannel* channel)
   return callbacks;
 }
 
+dlms_association_hls_mechanism_t CallbackHlsMechanism(void* userData)
+{
+  CallbackHls* hls = static_cast<CallbackHls*>(userData);
+  ++hls->mechanismCalls;
+  return hls->mechanism;
+}
+
+dlms_association_status_t CallbackHlsChallenge(
+  void* userData,
+  std::uint8_t* output,
+  std::size_t outputSize,
+  std::size_t* writtenSize)
+{
+  CallbackHls* hls = static_cast<CallbackHls*>(userData);
+  ++hls->challengeCalls;
+  if (writtenSize != 0) {
+    *writtenSize = 0u;
+  }
+  if (hls->challengeStatus != DLMS_ASSOCIATION_STATUS_OK) {
+    return hls->challengeStatus;
+  }
+  if (outputSize < hls->challenge.size()) {
+    return DLMS_ASSOCIATION_STATUS_INVALID_ARGUMENT;
+  }
+  for (std::size_t i = 0; i < hls->challenge.size(); ++i) {
+    output[i] = hls->challenge[i];
+  }
+  if (writtenSize != 0) {
+    *writtenSize = hls->challenge.size();
+  }
+  return DLMS_ASSOCIATION_STATUS_OK;
+}
+
+dlms_association_hls_callbacks_t MakeHlsCallbacks()
+{
+  dlms_association_hls_callbacks_t callbacks;
+  callbacks.mechanism = &CallbackHlsMechanism;
+  callbacks.build_initial_challenge = &CallbackHlsChallenge;
+  return callbacks;
+}
+
 } // namespace
 
 TEST(AssociationCApi, StatusValuesMatchCppContract)
@@ -131,6 +181,10 @@ TEST(AssociationCApi, DefaultOptionsExposeLnNoAuthentication)
   EXPECT_EQ(6u, options.proposed_dlms_version_number);
   EXPECT_NE(0u, options.client_max_receive_pdu_size);
   EXPECT_NE(0u, options.receive_buffer_size);
+  EXPECT_EQ(nullptr, options.low_level_security_credential);
+  EXPECT_EQ(0u, options.low_level_security_credential_size);
+  EXPECT_EQ(nullptr, options.high_level_security);
+  EXPECT_EQ(nullptr, options.high_level_security_user_data);
 }
 
 TEST(AssociationCApi, CallbackClientLifecycle)
@@ -176,6 +230,92 @@ TEST(AssociationCApi, CallbackClientLifecycle)
               channel.sends[1].size(),
               sent));
   EXPECT_EQ(dlms::apdu::AcseApduKind::Rlrq, sent.kind);
+
+  dlms_association_destroy_client(client);
+}
+
+TEST(AssociationCApi, LowLevelSecurityCredentialIsCopiedAndRejected)
+{
+  CallbackChannel channel;
+  channel.open = false;
+  channel.receiveStatus = DLMS_ASSOCIATION_STATUS_OK;
+
+  const std::uint8_t credential[] = {'p', 'w'};
+  dlms_association_options_t options;
+  dlms_association_default_options(&options);
+  options.authentication_mode =
+    DLMS_ASSOCIATION_AUTHENTICATION_LOW_LEVEL_SECURITY;
+  options.low_level_security_credential = credential;
+  options.low_level_security_credential_size = sizeof(credential);
+  dlms_association_channel_callbacks_t callbacks = MakeCallbacks(&channel);
+
+  dlms_association_client_t* client =
+    dlms_association_create_client_from_callbacks(&callbacks, &options);
+  ASSERT_NE(nullptr, client);
+
+  EXPECT_EQ(DLMS_ASSOCIATION_STATUS_OK, dlms_association_open(client));
+  EXPECT_EQ(DLMS_ASSOCIATION_STATUS_UNSUPPORTED_AUTHENTICATION,
+            dlms_association_establish(client));
+  EXPECT_TRUE(channel.sends.empty());
+
+  dlms_association_destroy_client(client);
+}
+
+TEST(AssociationCApi, HighLevelSecurityCallbacksAreDelegatedBeforeReject)
+{
+  CallbackChannel channel;
+  channel.open = false;
+  channel.receiveStatus = DLMS_ASSOCIATION_STATUS_OK;
+  CallbackHls hls;
+  hls.mechanismCalls = 0;
+  hls.challengeCalls = 0;
+  hls.mechanism = DLMS_ASSOCIATION_HLS_MECHANISM_GMAC;
+  hls.challengeStatus = DLMS_ASSOCIATION_STATUS_OK;
+  hls.challenge.push_back(0x01);
+
+  dlms_association_options_t options;
+  dlms_association_default_options(&options);
+  options.authentication_mode =
+    DLMS_ASSOCIATION_AUTHENTICATION_HIGH_LEVEL_SECURITY;
+  const dlms_association_hls_callbacks_t hlsCallbacks = MakeHlsCallbacks();
+  options.high_level_security = &hlsCallbacks;
+  options.high_level_security_user_data = &hls;
+  dlms_association_channel_callbacks_t callbacks = MakeCallbacks(&channel);
+
+  dlms_association_client_t* client =
+    dlms_association_create_client_from_callbacks(&callbacks, &options);
+  ASSERT_NE(nullptr, client);
+
+  EXPECT_EQ(DLMS_ASSOCIATION_STATUS_OK, dlms_association_open(client));
+  EXPECT_EQ(DLMS_ASSOCIATION_STATUS_UNSUPPORTED_AUTHENTICATION,
+            dlms_association_establish(client));
+  EXPECT_EQ(1, hls.mechanismCalls);
+  EXPECT_EQ(1, hls.challengeCalls);
+  EXPECT_TRUE(channel.sends.empty());
+
+  dlms_association_destroy_client(client);
+}
+
+TEST(AssociationCApi, HighLevelSecurityModeWithoutCallbacksIsRejected)
+{
+  CallbackChannel channel;
+  channel.open = false;
+  channel.receiveStatus = DLMS_ASSOCIATION_STATUS_OK;
+
+  dlms_association_options_t options;
+  dlms_association_default_options(&options);
+  options.authentication_mode =
+    DLMS_ASSOCIATION_AUTHENTICATION_HIGH_LEVEL_SECURITY;
+  dlms_association_channel_callbacks_t callbacks = MakeCallbacks(&channel);
+
+  dlms_association_client_t* client =
+    dlms_association_create_client_from_callbacks(&callbacks, &options);
+  ASSERT_NE(nullptr, client);
+
+  EXPECT_EQ(DLMS_ASSOCIATION_STATUS_OK, dlms_association_open(client));
+  EXPECT_EQ(DLMS_ASSOCIATION_STATUS_UNSUPPORTED_AUTHENTICATION,
+            dlms_association_establish(client));
+  EXPECT_TRUE(channel.sends.empty());
 
   dlms_association_destroy_client(client);
 }

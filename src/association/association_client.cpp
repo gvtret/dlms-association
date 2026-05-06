@@ -15,6 +15,13 @@ bool IsProfileOk(dlms::profile::ProfileStatus status)
          status == dlms::profile::ProfileStatus::AlreadyOpen;
 }
 
+bool IsSupportedHlsMechanism(HighLevelSecurityMechanism mechanism)
+{
+  return mechanism == HighLevelSecurityMechanism::HlsMd5 ||
+         mechanism == HighLevelSecurityMechanism::HlsSha1 ||
+         mechanism == HighLevelSecurityMechanism::HlsGmac;
+}
+
 } // namespace
 
 AssociationClient::AssociationClient(
@@ -256,7 +263,29 @@ AssociationStatus AssociationClient::ValidateOptions() const
     return AssociationStatus::UnsupportedApplicationContext;
   }
 
-  if (options_.authenticationMode != AuthenticationMode::None) {
+  if (options_.authenticationMode == AuthenticationMode::LowLevelSecurity) {
+    if (options_.lowLevelSecurityCredential.empty()) {
+      return AssociationStatus::UnsupportedAuthentication;
+    }
+    return AssociationStatus::UnsupportedAuthentication;
+  }
+
+  if (options_.authenticationMode == AuthenticationMode::HighLevelSecurity) {
+    if (options_.highLevelSecurity == 0) {
+      return AssociationStatus::UnsupportedAuthentication;
+    }
+
+    if (!IsSupportedHlsMechanism(options_.highLevelSecurity->Mechanism())) {
+      return AssociationStatus::UnsupportedAuthentication;
+    }
+
+    std::vector<std::uint8_t> challenge;
+    if (options_.highLevelSecurity->BuildInitialChallenge(challenge) !=
+        AssociationStatus::Ok ||
+        challenge.empty()) {
+      return AssociationStatus::UnsupportedAuthentication;
+    }
+
     return AssociationStatus::UnsupportedAuthentication;
   }
 

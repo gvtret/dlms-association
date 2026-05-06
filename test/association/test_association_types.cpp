@@ -14,6 +14,8 @@ TEST(AssociationTypes, DefaultOptionsUseDlmsInitiateDefaults)
             options.applicationContext);
   EXPECT_EQ(dlms::association::AuthenticationMode::None,
             options.authenticationMode);
+  EXPECT_TRUE(options.lowLevelSecurityCredential.empty());
+  EXPECT_EQ(0, options.highLevelSecurity);
   EXPECT_EQ(6u, options.proposedDlmsVersionNumber);
   EXPECT_EQ(0x00u, options.proposedConformance.bytes[0]);
   EXPECT_EQ(0x7eu, options.proposedConformance.bytes[1]);
