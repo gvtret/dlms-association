@@ -25,6 +25,14 @@ Required first-phase tests:
 - C API callback client can open, establish, release, and close
 - C API rejects missing required callbacks and null handles
 - C API public header compiles as C
+- default authentication boundary has no LLS credential and no HLS strategy
+- LLS without credential returns `UnsupportedAuthentication`
+- LLS with credential is modeled but rejected until ACSE auth encoding exists
+- HLS without strategy returns `UnsupportedAuthentication`
+- HLS strategy failures return `UnsupportedAuthentication`
+- HLS unsupported mechanisms return `UnsupportedAuthentication`
+- C API can carry an LLS credential pointer/size without taking ownership
+- C API rejects HLS modes without callback table
 
 ## 2. Integration Tests
 
@@ -35,6 +43,10 @@ Root integration shall later verify association over:
 - HDLC/LLC profile fake byte stream
 
 The first phase only requires unit-level fake `IApduChannel` tests.
+
+Authentication integration is intentionally deferred until the APDU layer
+provides ACSE authentication field encoding and a security layer provides HLS
+challenge algorithms.
 
 ## 3. Verification Commands
 

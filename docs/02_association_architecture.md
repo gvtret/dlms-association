@@ -87,3 +87,46 @@ classDiagram
 
 `AssociationClient` stores a reference to `dlms::profile::IApduChannel`. It
 does not own the channel and does not own transport resources directly.
+
+## 6. Authentication Boundary
+
+```mermaid
+flowchart TD
+  Caller["Caller"]
+  Options["AssociationOptions"]
+  Client["AssociationClient"]
+  Hls["IHighLevelSecurityStrategy"]
+  Apdu["dlms-apdu ACSE codec"]
+  FutureSecurity["Future security layer"]
+
+  Caller --> Options
+  Options --> Client
+  Client --> Hls
+  Hls --> FutureSecurity
+  Client --> Apdu
+```
+
+```mermaid
+sequenceDiagram
+  participant App as Caller
+  participant Assoc as AssociationClient
+  participant Hls as IHighLevelSecurityStrategy
+  participant Apdu as dlms-apdu
+
+  App->>Assoc: Establish()
+  Assoc->>Assoc: Validate authentication mode
+  alt None
+    Assoc->>Apdu: Encode AARQ without authentication fields
+  else LLS
+    Assoc-->>App: UnsupportedAuthentication until ACSE auth encode exists
+  else HLS
+    Assoc->>Hls: Mechanism()
+    Assoc->>Hls: BuildInitialChallenge()
+    Assoc-->>App: UnsupportedAuthentication until ACSE auth encode exists
+  end
+```
+
+`dlms-association` owns only the association state machine and option
+validation. Authentication mechanism OIDs, ACSE authentication fields,
+challenge functions, ciphering, keys, and invocation counters remain delegated
+to `dlms-apdu` or a future security layer.

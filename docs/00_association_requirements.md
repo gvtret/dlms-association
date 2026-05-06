@@ -68,18 +68,28 @@ Rules:
 
 ## 5. Security Boundary
 
-The first implementation shall reject authentication modes other than `None`.
-It shall not encode ACSE authentication requirements, mechanism name,
-authentication value, ciphered initiate request, or dedicated key.
+The layer shall model the association authentication boundary without owning
+cryptographic algorithms or secret lifecycle.
 
-Future security work belongs in a dedicated security/authentication layer or a
-later association phase with explicit interfaces.
+The phase 4 boundary shall:
+
+- keep `None` as the default lowest-level security mode
+- model Low Level Security (LLS) credentials in `AssociationOptions`
+- reject LLS when no credential is configured
+- reject LLS at establish time until `dlms-apdu` exposes ACSE authentication
+  field encoding
+- model High Level Security (HLS) as a delegated strategy interface
+- reject HLS when no strategy is configured
+- let the strategy validate the selected HLS mechanism and provide the initial
+  client-to-server challenge bytes
+- keep the HLS pass-3/pass-4 xDLMS method exchange out of this layer until the
+  future client/object layer exists
+- keep global ciphering, dedicated ciphering, keys, invocation counters, and
+  security suite algorithms outside this repo
 
 ## 6. Out of Scope
 
-- C API
 - server-side acceptor
-- HLS challenge/response
 - global or dedicated ciphering
 - retry policies for failed AARE receive
 - object model and high-level GET/SET/ACTION client

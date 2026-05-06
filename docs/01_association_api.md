@@ -34,6 +34,8 @@ include/dlms/association/association_types.hpp
 
 - `applicationContext`
 - `authenticationMode`
+- `lowLevelSecurityCredential`
+- `highLevelSecurity`
 - `proposedDlmsVersionNumber`
 - `proposedConformance`
 - `clientMaxReceivePduSize`
@@ -99,3 +101,27 @@ statuses internally.
 Use `dlms_association_default_options()` before changing individual fields.
 Use `dlms_association_get_result()` after a successful establish to copy the
 negotiated context into a caller-owned result struct.
+
+## 7. Authentication Boundary
+
+Phase 4 extends the options model with explicit authentication inputs while
+leaving ACSE authentication encoding and HLS cryptography outside this repo.
+
+LLS is represented by a caller-owned credential byte vector. Establishing an
+LLS association without a credential returns `UnsupportedAuthentication`.
+Establishing with a credential is also rejected until `dlms-apdu` exposes ACSE
+authentication field encoding. This keeps the public option contract stable
+without fabricating partial AARQ authentication bytes in this layer.
+
+HLS is represented by a non-owning `IHighLevelSecurityStrategy` pointer. The
+strategy supplies the mechanism and initial client-to-server challenge for the
+AARQ boundary. Missing strategies, unsupported mechanisms, and strategy
+failures return `UnsupportedAuthentication`.
+
+The C API exposes the same boundary through option fields:
+
+- LLS credential pointer and size
+- HLS callback table pointer
+- HLS user context pointer
+
+The C API does not take ownership of credential memory or callback state.

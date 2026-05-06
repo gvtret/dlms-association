@@ -58,6 +58,14 @@ Deliverables:
 
 Deliverables:
 
+- documentation-first contract for LLS/HLS boundary
 - LLS credential option modeling
 - HLS strategy interface
 - tests for unsupported and delegated authentication modes
+
+Commit messages:
+
+```text
+docs(association): specify authentication boundary
+feat(association): model authentication boundary
+```
