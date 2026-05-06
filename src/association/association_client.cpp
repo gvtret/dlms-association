@@ -108,6 +108,45 @@ AssociationStatus AssociationClient::Establish()
   return AssociationStatus::Ok;
 }
 
+AssociationStatus AssociationClient::Release()
+{
+  if (state_ != AssociationState::Associated) {
+    return AssociationStatus::InvalidState;
+  }
+
+  std::vector<std::uint8_t> rlrq;
+  const AssociationStatus buildStatus = BuildRlrq(rlrq);
+  if (buildStatus != AssociationStatus::Ok) {
+    return buildStatus;
+  }
+
+  dlms::profile::ProfileByteView view = {rlrq.empty() ? 0 : &rlrq[0], rlrq.size()};
+  const dlms::profile::ProfileStatus sendStatus = channel_.SendApdu(view);
+  if (sendStatus != dlms::profile::ProfileStatus::Ok) {
+    return AssociationStatus::SendFailed;
+  }
+
+  std::vector<std::uint8_t> rlre;
+  const dlms::profile::ProfileStatus receiveStatus = channel_.ReceiveApdu(rlre);
+  if (receiveStatus != dlms::profile::ProfileStatus::Ok) {
+    return AssociationStatus::ReceiveFailed;
+  }
+
+  const AssociationStatus decodeStatus = DecodeRlre(rlre);
+  if (decodeStatus != AssociationStatus::Ok) {
+    return decodeStatus;
+  }
+
+  const dlms::profile::ProfileStatus closeStatus = channel_.Close();
+  if (closeStatus != dlms::profile::ProfileStatus::Ok) {
+    return AssociationStatus::ChannelCloseFailed;
+  }
+
+  result_ = EmptyAssociationResult();
+  state_ = AssociationState::Closed;
+  return AssociationStatus::Ok;
+}
+
 AssociationState AssociationClient::State() const
 {
   return state_;
@@ -179,6 +218,35 @@ AssociationStatus AssociationClient::DecodeAare(
   result_.serverMaxReceivePduSize =
     apdu.aare.initiateResponse.serverMaxReceivePduSize;
   result_.vaaName = apdu.aare.initiateResponse.vaaName;
+  return AssociationStatus::Ok;
+}
+
+AssociationStatus AssociationClient::BuildRlrq(
+  std::vector<std::uint8_t>& output) const
+{
+  const dlms::apdu::AcseApdu rlrq = dlms::apdu::MakeRlrq();
+  const dlms::apdu::ApduStatus status =
+    dlms::apdu::EncodeAcseApdu(rlrq, output);
+  return status == dlms::apdu::ApduStatus::Ok
+    ? AssociationStatus::Ok
+    : AssociationStatus::EncodeFailed;
+}
+
+AssociationStatus AssociationClient::DecodeRlre(
+  const std::vector<std::uint8_t>& input) const
+{
+  if (input.empty()) {
+    return AssociationStatus::DecodeFailed;
+  }
+
+  dlms::apdu::AcseApdu apdu = {};
+  const dlms::apdu::ApduStatus status =
+    dlms::apdu::DecodeAcseApdu(&input[0], input.size(), apdu);
+  if (status != dlms::apdu::ApduStatus::Ok ||
+      apdu.kind != dlms::apdu::AcseApduKind::Rlre) {
+    return AssociationStatus::DecodeFailed;
+  }
+
   return AssociationStatus::Ok;
 }
 

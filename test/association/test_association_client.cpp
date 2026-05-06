@@ -120,6 +120,12 @@ std::vector<std::uint8_t> MakeAareBytes(std::int32_t result)
   return output;
 }
 
+std::vector<std::uint8_t> MakeRlreBytes()
+{
+  const std::uint8_t kRlre[] = {0x63, 0x00};
+  return std::vector<std::uint8_t>(kRlre, kRlre + sizeof(kRlre));
+}
+
 } // namespace
 
 TEST(AssociationClient, EstablishRequiresOpenChannel)
@@ -256,6 +262,94 @@ TEST(AssociationClient, CloseReturnsToClosed)
 
   ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
   ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Establish());
+  EXPECT_EQ(dlms::association::AssociationStatus::Ok, client.Close());
+  EXPECT_EQ(dlms::association::AssociationState::Closed, client.State());
+}
+
+TEST(AssociationClient, ReleaseRequiresAssociatedState)
+{
+  FakeApduChannel channel;
+
+  dlms::association::AssociationClient client(
+    channel,
+    dlms::association::DefaultAssociationOptions());
+
+  EXPECT_EQ(dlms::association::AssociationStatus::InvalidState,
+            client.Release());
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  EXPECT_EQ(dlms::association::AssociationStatus::InvalidState,
+            client.Release());
+}
+
+TEST(AssociationClient, SuccessfulReleaseSendsRlrqReceivesRlreAndCloses)
+{
+  FakeApduChannel channel;
+  channel.nextReceive = MakeAareBytes(0);
+
+  dlms::association::AssociationClient client(
+    channel,
+    dlms::association::DefaultAssociationOptions());
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Establish());
+
+  channel.nextReceive = MakeRlreBytes();
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Release());
+
+  EXPECT_EQ(dlms::association::AssociationState::Closed, client.State());
+  EXPECT_FALSE(client.IsAssociated());
+  EXPECT_EQ(2, channel.sendCalls);
+  EXPECT_EQ(2, channel.receiveCalls);
+  EXPECT_EQ(1, channel.closeCalls);
+  EXPECT_FALSE(channel.open);
+  EXPECT_EQ(0u, client.Result().serverMaxReceivePduSize);
+
+  dlms::apdu::AcseApdu sent = {};
+  ASSERT_EQ(dlms::apdu::ApduStatus::Ok,
+            dlms::apdu::DecodeAcseApdu(
+              &channel.sent[0],
+              channel.sent.size(),
+              sent));
+  EXPECT_EQ(dlms::apdu::AcseApduKind::Rlrq, sent.kind);
+}
+
+TEST(AssociationClient, MalformedReleaseResponseLeavesAssociated)
+{
+  FakeApduChannel channel;
+  channel.nextReceive = MakeAareBytes(0);
+
+  dlms::association::AssociationClient client(
+    channel,
+    dlms::association::DefaultAssociationOptions());
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Establish());
+
+  channel.nextReceive.clear();
+  channel.nextReceive.push_back(0x61);
+  EXPECT_EQ(dlms::association::AssociationStatus::DecodeFailed,
+            client.Release());
+  EXPECT_EQ(dlms::association::AssociationState::Associated, client.State());
+  EXPECT_TRUE(client.IsAssociated());
+}
+
+TEST(AssociationClient, ReleaseReceiveFailureAllowsCloseFallback)
+{
+  FakeApduChannel channel;
+  channel.nextReceive = MakeAareBytes(0);
+
+  dlms::association::AssociationClient client(
+    channel,
+    dlms::association::DefaultAssociationOptions());
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Establish());
+
+  channel.receiveStatus = dlms::profile::ProfileStatus::Timeout;
+  EXPECT_EQ(dlms::association::AssociationStatus::ReceiveFailed,
+            client.Release());
+  EXPECT_EQ(dlms::association::AssociationState::Associated, client.State());
+
   EXPECT_EQ(dlms::association::AssociationStatus::Ok, client.Close());
   EXPECT_EQ(dlms::association::AssociationState::Closed, client.State());
 }
