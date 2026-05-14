@@ -37,11 +37,11 @@ prefix:
   authentication_mechanism_name(2) mechanism_id(x) }
 ```
 
-For the mechanisms already modeled by this repo:
+For the mechanisms modeled by this repo:
 
 | Mechanism | mechanism_id |
 |---|---:|
-| HLS | `2` |
+| HLS High | `2` |
 | HLS MD5 | `3` |
 | HLS SHA-1 | `4` |
 | HLS GMAC | `5` |
@@ -125,6 +125,8 @@ shall return `DecodeFailed` for HLS mode.
 
 Deterministic tests shall cover:
 
+- HLS High AARQ contains sender ACSE requirements, mechanism id `2`, and the
+  exact client challenge;
 - HLS GMAC AARQ contains sender ACSE requirements, mechanism id `5`, and the
   exact client challenge;
 - HLS MD5 and SHA-1 map to mechanism ids `3` and `4`;
