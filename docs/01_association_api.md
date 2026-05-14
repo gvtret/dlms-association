@@ -53,6 +53,8 @@ proposal using `dlms-apdu` default xDLMS initiate settings.
 - `vaaName`
 - `aareResult`
 - `aareDiagnostic`
+- `highLevelSecurityServerChallenge`
+- `respondingApplicationTitle`
 
 ## 5. Client
 
@@ -123,8 +125,11 @@ encodes sender ACSE requirements, mechanism-name, and the client-to-server
 calling-authentication-value. It also exposes the AARE server-to-client
 challenge from responding-authentication-value in
 `AssociationResult::highLevelSecurityServerChallenge` once that field is
-decoded. The pass-3/pass-4 xDLMS ACTION exchange remains a higher layer
-responsibility.
+decoded. It also exposes the AARE responding AP title in
+`AssociationResult::respondingApplicationTitle` when the meter sends that ACSE
+field. HLS GMAC clients may use an 8-byte responding AP title as the remote
+system title for pass-4 authentication. The pass-3/pass-4 xDLMS ACTION
+exchange remains a higher layer responsibility.
 
 The C API exposes the same boundary through option fields:
 
