@@ -35,6 +35,7 @@ AssociationResult EmptyAssociationResult()
   result.hasAareDiagnostic = false;
   result.aareDiagnostic = 0;
   result.highLevelSecurityServerChallenge.clear();
+  result.respondingApplicationTitle.clear();
   return result;
 }
 

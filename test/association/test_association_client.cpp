@@ -154,6 +154,16 @@ std::vector<std::uint8_t> MakeAareBytes(std::int32_t result)
   return output;
 }
 
+void InsertRespondingApplicationTitle(
+  std::vector<std::uint8_t>& aare,
+  std::uint8_t tag)
+{
+  const std::uint8_t title[] = {
+    tag, 0x0A, 0x04, 0x08, 'S', 'R', 'V', 'T', 'I', 'T', 'L', 'E'};
+  aare.insert(aare.begin() + 29, title, title + sizeof(title));
+  aare[1] = static_cast<std::uint8_t>(aare[1] + sizeof(title));
+}
+
 std::vector<std::uint8_t> MakeRlreBytes()
 {
   const std::uint8_t kRlre[] = {0x63, 0x00};
@@ -425,6 +435,29 @@ TEST(AssociationClient, HighLevelSecurityGmacAddsAarqAuthFields)
       expectedServerChallenge,
       expectedServerChallenge + sizeof(expectedServerChallenge)),
     client.Result().highLevelSecurityServerChallenge);
+}
+
+TEST(AssociationClient, AareRespondingApplicationTitleIsExposed)
+{
+  const std::uint8_t tags[] = {0xA4, 0xA6};
+  const std::uint8_t expected[] =
+    {'S', 'R', 'V', 'T', 'I', 'T', 'L', 'E'};
+
+  for (std::size_t i = 0u; i < 2u; ++i) {
+    FakeApduChannel channel;
+    channel.nextReceive = MakeAareBytes(0);
+    InsertRespondingApplicationTitle(channel.nextReceive, tags[i]);
+
+    dlms::association::AssociationClient client(
+      channel,
+      dlms::association::DefaultAssociationOptions());
+
+    ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+    ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Establish());
+    EXPECT_EQ(
+      std::vector<std::uint8_t>(expected, expected + sizeof(expected)),
+      client.Result().respondingApplicationTitle);
+  }
 }
 
 TEST(AssociationClient, HighLevelSecurityStrategyFailureIsRejected)

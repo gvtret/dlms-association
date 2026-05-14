@@ -11,9 +11,12 @@ namespace {
 
 constexpr std::uint8_t kSenderAcseRequirementsTag = 0x8A;
 constexpr std::uint8_t kMechanismNameTag = 0x8B;
+constexpr std::uint8_t kCalledApInvocationIdTag = 0xA4;
+constexpr std::uint8_t kCallingApTitleTag = 0xA6;
 constexpr std::uint8_t kRespondingAuthenticationValueTag = 0xAA;
 constexpr std::uint8_t kCallingAuthenticationValueTag = 0xAC;
 constexpr std::uint8_t kCharstringAuthenticationValueTag = 0x80;
+constexpr std::uint8_t kOctetStringTag = 0x04;
 constexpr std::size_t kMaxShortBerAuthenticationValueSize = 125u;
 
 bool IsProfileOk(dlms::profile::ProfileStatus status)
@@ -192,6 +195,27 @@ bool DecodeAuthenticationValue(
   if (bytes[0] != expectedTag ||
       bytes[1] != size - 2u ||
       bytes[2] != kCharstringAuthenticationValueTag ||
+      bytes[3] != size - 4u) {
+    return false;
+  }
+
+  output.assign(bytes + 4u, bytes + size);
+  return true;
+}
+
+bool DecodeOctetStringField(
+  const dlms::apdu::AcseRawField& field,
+  std::vector<std::uint8_t>& output)
+{
+  if (field.encoded.data == 0 || field.encoded.size < 4u) {
+    return false;
+  }
+
+  const std::uint8_t* bytes = field.encoded.data;
+  const std::size_t size = field.encoded.size;
+  if (bytes[0] != field.tag ||
+      bytes[1] != size - 2u ||
+      bytes[2] != kOctetStringTag ||
       bytes[3] != size - 4u) {
     return false;
   }
@@ -410,6 +434,18 @@ AssociationStatus AssociationClient::DecodeAare(
   result_.serverMaxReceivePduSize =
     apdu.aare.initiateResponse.serverMaxReceivePduSize;
   result_.vaaName = apdu.aare.initiateResponse.vaaName;
+  result_.respondingApplicationTitle.clear();
+
+  for (std::size_t i = 0u; i < apdu.aare.fields.size(); ++i) {
+    if (apdu.aare.fields[i].tag == kCalledApInvocationIdTag ||
+        apdu.aare.fields[i].tag == kCallingApTitleTag) {
+      std::vector<std::uint8_t> title;
+      if (DecodeOctetStringField(apdu.aare.fields[i], title)) {
+        result_.respondingApplicationTitle = title;
+        break;
+      }
+    }
+  }
 
   if (options_.authenticationMode == AuthenticationMode::HighLevelSecurity) {
     result_.highLevelSecurityServerChallenge.clear();

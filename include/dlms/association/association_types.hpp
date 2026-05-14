@@ -72,6 +72,7 @@ struct AssociationResult
   bool hasAareDiagnostic;
   std::int32_t aareDiagnostic;
   std::vector<std::uint8_t> highLevelSecurityServerChallenge;
+  std::vector<std::uint8_t> respondingApplicationTitle;
 };
 
 AssociationOptions DefaultAssociationOptions();
