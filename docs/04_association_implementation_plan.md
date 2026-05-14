@@ -87,3 +87,22 @@ Commit messages:
 docs(association): define LLS AARQ authentication
 feat(association): encode LLS AARQ authentication
 ```
+
+## Phase 6. HLS AARQ Boundary
+
+Deliverables:
+
+- documentation-first contract for HLS ACSE fields;
+- AARQ sender ACSE requirements field;
+- AARQ HLS mechanism-name field;
+- AARQ calling-authentication-value field with the initial client challenge;
+- AARE server challenge extraction into `AssociationResult`;
+- tests for mechanism ids, challenge validation, exact challenge preservation,
+  and malformed AARE authentication values.
+
+Commit messages:
+
+```text
+docs(association): define HLS AARQ boundary
+feat(association): encode HLS AARQ authentication
+```
