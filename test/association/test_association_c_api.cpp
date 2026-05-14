@@ -291,17 +291,19 @@ TEST(AssociationCApi, LowLevelSecurityCredentialIsCopiedAndEncoded)
   dlms_association_destroy_client(client);
 }
 
-TEST(AssociationCApi, HighLevelSecurityCallbacksAreDelegatedBeforeReject)
+TEST(AssociationCApi, HighLevelSecurityCallbacksEncodeAarq)
 {
   CallbackChannel channel;
   channel.open = false;
   channel.receiveStatus = DLMS_ASSOCIATION_STATUS_OK;
+  channel.receives.push_back(MakeAareBytes());
   CallbackHls hls;
   hls.mechanismCalls = 0;
   hls.challengeCalls = 0;
   hls.mechanism = DLMS_ASSOCIATION_HLS_MECHANISM_GMAC;
   hls.challengeStatus = DLMS_ASSOCIATION_STATUS_OK;
-  hls.challenge.push_back(0x01);
+  hls.challenge.push_back(0xC1);
+  hls.challenge.push_back(0xC2);
 
   dlms_association_options_t options;
   dlms_association_default_options(&options);
@@ -317,11 +319,33 @@ TEST(AssociationCApi, HighLevelSecurityCallbacksAreDelegatedBeforeReject)
   ASSERT_NE(nullptr, client);
 
   EXPECT_EQ(DLMS_ASSOCIATION_STATUS_OK, dlms_association_open(client));
-  EXPECT_EQ(DLMS_ASSOCIATION_STATUS_UNSUPPORTED_AUTHENTICATION,
-            dlms_association_establish(client));
+  EXPECT_EQ(DLMS_ASSOCIATION_STATUS_OK, dlms_association_establish(client));
   EXPECT_EQ(1, hls.mechanismCalls);
   EXPECT_EQ(1, hls.challengeCalls);
-  EXPECT_TRUE(channel.sends.empty());
+  ASSERT_EQ(1u, channel.sends.size());
+
+  dlms::apdu::AcseApdu sent = {};
+  ASSERT_EQ(dlms::apdu::ApduStatus::Ok,
+            dlms::apdu::DecodeAcseApdu(
+              &channel.sends[0][0],
+              channel.sends[0].size(),
+              sent));
+  ASSERT_EQ(dlms::apdu::AcseApduKind::Aarq, sent.kind);
+
+  const std::uint8_t expectedMechanism[] = {
+    0x8B, 0x07, 0x60, 0x85, 0x74, 0x05, 0x08, 0x02, 0x05};
+  const std::uint8_t expectedChallenge[] = {
+    0xAC, 0x04, 0x80, 0x02, 0xC1, 0xC2};
+  EXPECT_EQ(
+    std::vector<std::uint8_t>(
+      expectedMechanism,
+      expectedMechanism + sizeof(expectedMechanism)),
+    FieldBytes(sent.aarq, 0x8B));
+  EXPECT_EQ(
+    std::vector<std::uint8_t>(
+      expectedChallenge,
+      expectedChallenge + sizeof(expectedChallenge)),
+    FieldBytes(sent.aarq, 0xAC));
 
   dlms_association_destroy_client(client);
 }

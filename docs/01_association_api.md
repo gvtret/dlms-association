@@ -121,9 +121,10 @@ failures return `UnsupportedAuthentication`.
 The HLS AARQ boundary is limited to ACSE field exchange. The association layer
 encodes sender ACSE requirements, mechanism-name, and the client-to-server
 calling-authentication-value. It also exposes the AARE server-to-client
-challenge in `AssociationResult::highLevelSecurityServerChallenge` once that
-field is decoded. The pass-3/pass-4 xDLMS ACTION exchange remains a higher
-layer responsibility.
+challenge from responding-authentication-value in
+`AssociationResult::highLevelSecurityServerChallenge` once that field is
+decoded. The pass-3/pass-4 xDLMS ACTION exchange remains a higher layer
+responsibility.
 
 The C API exposes the same boundary through option fields:
 

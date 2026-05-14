@@ -12,7 +12,8 @@ It covers:
 - AARQ authentication mechanism name field;
 - AARQ calling-authentication-value field containing the client-to-server
   challenge supplied by `IHighLevelSecurityStrategy`;
-- AARE server-to-client challenge extraction for the caller.
+- AARE responding-authentication-value server-to-client challenge extraction
+  for the caller.
 
 It does not cover:
 
@@ -71,7 +72,7 @@ client-to-server challenge bytes. The strategy is not called for pass-3/pass-4
 inside `dlms-association`.
 
 `AssociationResult` shall expose the server-to-client challenge decoded from
-the AARE calling-authentication-value field:
+the AARE responding-authentication-value field:
 
 ```cpp
 std::vector<std::uint8_t> highLevelSecurityServerChallenge;
@@ -109,11 +110,12 @@ The challenge bytes are forwarded exactly as supplied by the strategy.
 
 ## 6. AARE Fields
 
-`DecodeAare()` shall scan raw AARE fields for `calling-authentication-value`
-tag `0xAC` and extract the inner charstring value when encoded as:
+`DecodeAare()` shall scan raw AARE fields for
+`responding-authentication-value` tag `0xAA` and extract the inner charstring
+value when encoded as:
 
 ```text
-AC <size + 2> 80 <size> <server_challenge_bytes>
+AA <size + 2> 80 <size> <server_challenge_bytes>
 ```
 
 Malformed authentication value fields shall be ignored for non-HLS modes and

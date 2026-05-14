@@ -365,10 +365,14 @@ TEST(AssociationClient, LowLevelSecurityRejectsCredentialTooLargeForShortBer)
   EXPECT_EQ(0, channel.sendCalls);
 }
 
-TEST(AssociationClient, HighLevelSecurityStrategyIsDelegatedBeforeReject)
+TEST(AssociationClient, HighLevelSecurityGmacAddsAarqAuthFields)
 {
   FakeApduChannel channel;
+  channel.nextReceive = MakeAareBytes(0);
   FakeHlsStrategy strategy;
+  strategy.challenge.clear();
+  strategy.challenge.push_back(0xC1);
+  strategy.challenge.push_back(0xC2);
   dlms::association::AssociationOptions options =
     dlms::association::DefaultAssociationOptions();
   options.authenticationMode =
@@ -378,11 +382,49 @@ TEST(AssociationClient, HighLevelSecurityStrategyIsDelegatedBeforeReject)
   dlms::association::AssociationClient client(channel, options);
 
   ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
-  EXPECT_EQ(dlms::association::AssociationStatus::UnsupportedAuthentication,
-            client.Establish());
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Establish());
   EXPECT_EQ(1, strategy.mechanismCalls);
   EXPECT_EQ(1, strategy.challengeCalls);
-  EXPECT_EQ(0, channel.sendCalls);
+  EXPECT_EQ(1, channel.sendCalls);
+
+  dlms::apdu::AcseApdu sent = {};
+  ASSERT_EQ(dlms::apdu::ApduStatus::Ok,
+            dlms::apdu::DecodeAcseApdu(
+              &channel.sent[0],
+              channel.sent.size(),
+              sent));
+  ASSERT_EQ(dlms::apdu::AcseApduKind::Aarq, sent.kind);
+
+  const std::uint8_t expectedRequirements[] = {0x8A, 0x02, 0x07, 0x80};
+  const std::uint8_t expectedMechanism[] = {
+    0x8B, 0x07, 0x60, 0x85, 0x74, 0x05, 0x08, 0x02, 0x05};
+  const std::uint8_t expectedChallenge[] = {
+    0xAC, 0x04, 0x80, 0x02, 0xC1, 0xC2};
+
+  EXPECT_EQ(
+    std::vector<std::uint8_t>(
+      expectedRequirements,
+      expectedRequirements + sizeof(expectedRequirements)),
+    FieldBytes(sent.aarq, 0x8A));
+  EXPECT_EQ(
+    std::vector<std::uint8_t>(
+      expectedMechanism,
+      expectedMechanism + sizeof(expectedMechanism)),
+    FieldBytes(sent.aarq, 0x8B));
+  EXPECT_EQ(
+    std::vector<std::uint8_t>(
+      expectedChallenge,
+      expectedChallenge + sizeof(expectedChallenge)),
+    FieldBytes(sent.aarq, 0xAC));
+
+  const std::uint8_t expectedServerChallenge[] = {
+    0xC6, 0x69, 0x73, 0x51, 0xFF, 0x4A, 0xEC, 0x29,
+    0xCD, 0xBA, 0xAB, 0xF2, 0xFB, 0xE3, 0x46, 0x7C};
+  EXPECT_EQ(
+    std::vector<std::uint8_t>(
+      expectedServerChallenge,
+      expectedServerChallenge + sizeof(expectedServerChallenge)),
+    client.Result().highLevelSecurityServerChallenge);
 }
 
 TEST(AssociationClient, HighLevelSecurityStrategyFailureIsRejected)
@@ -400,6 +442,48 @@ TEST(AssociationClient, HighLevelSecurityStrategyFailureIsRejected)
 
   ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
   EXPECT_EQ(dlms::association::AssociationStatus::UnsupportedAuthentication,
+            client.Establish());
+  EXPECT_EQ(1, strategy.mechanismCalls);
+  EXPECT_EQ(1, strategy.challengeCalls);
+  EXPECT_EQ(0, channel.sendCalls);
+}
+
+TEST(AssociationClient, HighLevelSecurityRejectsEmptyChallenge)
+{
+  FakeApduChannel channel;
+  FakeHlsStrategy strategy;
+  strategy.challenge.clear();
+  dlms::association::AssociationOptions options =
+    dlms::association::DefaultAssociationOptions();
+  options.authenticationMode =
+    dlms::association::AuthenticationMode::HighLevelSecurity;
+  options.highLevelSecurity = &strategy;
+
+  dlms::association::AssociationClient client(channel, options);
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  EXPECT_EQ(dlms::association::AssociationStatus::UnsupportedAuthentication,
+            client.Establish());
+  EXPECT_EQ(1, strategy.mechanismCalls);
+  EXPECT_EQ(1, strategy.challengeCalls);
+  EXPECT_EQ(0, channel.sendCalls);
+}
+
+TEST(AssociationClient, HighLevelSecurityRejectsChallengeTooLargeForShortBer)
+{
+  FakeApduChannel channel;
+  FakeHlsStrategy strategy;
+  strategy.challenge.assign(126u, 0x11);
+  dlms::association::AssociationOptions options =
+    dlms::association::DefaultAssociationOptions();
+  options.authenticationMode =
+    dlms::association::AuthenticationMode::HighLevelSecurity;
+  options.highLevelSecurity = &strategy;
+
+  dlms::association::AssociationClient client(channel, options);
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  EXPECT_EQ(dlms::association::AssociationStatus::InvalidArgument,
             client.Establish());
   EXPECT_EQ(1, strategy.mechanismCalls);
   EXPECT_EQ(1, strategy.challengeCalls);
@@ -426,6 +510,71 @@ TEST(AssociationClient, HighLevelSecurityUnsupportedMechanismIsRejected)
   EXPECT_EQ(1, strategy.mechanismCalls);
   EXPECT_EQ(0, strategy.challengeCalls);
   EXPECT_EQ(0, channel.sendCalls);
+}
+
+TEST(AssociationClient, HighLevelSecurityMd5AndSha1UseMechanismIds)
+{
+  const dlms::association::HighLevelSecurityMechanism mechanisms[] = {
+    dlms::association::HighLevelSecurityMechanism::HlsMd5,
+    dlms::association::HighLevelSecurityMechanism::HlsSha1};
+  const std::uint8_t ids[] = {0x03, 0x04};
+
+  for (std::size_t i = 0u; i < 2u; ++i) {
+    FakeApduChannel channel;
+    channel.nextReceive = MakeAareBytes(0);
+    FakeHlsStrategy strategy;
+    strategy.mechanism = mechanisms[i];
+    dlms::association::AssociationOptions options =
+      dlms::association::DefaultAssociationOptions();
+    options.authenticationMode =
+      dlms::association::AuthenticationMode::HighLevelSecurity;
+    options.highLevelSecurity = &strategy;
+
+    dlms::association::AssociationClient client(channel, options);
+
+    ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+    ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Establish());
+
+    dlms::apdu::AcseApdu sent = {};
+    ASSERT_EQ(dlms::apdu::ApduStatus::Ok,
+              dlms::apdu::DecodeAcseApdu(
+                &channel.sent[0],
+                channel.sent.size(),
+                sent));
+    const std::uint8_t expectedMechanism[] = {
+      0x8B, 0x07, 0x60, 0x85, 0x74, 0x05, 0x08, 0x02, ids[i]};
+    EXPECT_EQ(
+      std::vector<std::uint8_t>(
+        expectedMechanism,
+        expectedMechanism + sizeof(expectedMechanism)),
+      FieldBytes(sent.aarq, 0x8B));
+  }
+}
+
+TEST(AssociationClient, HighLevelSecurityMalformedServerChallengeFailsDecode)
+{
+  FakeApduChannel channel;
+  channel.nextReceive = MakeAareBytes(0);
+  for (std::size_t i = 0u; i + 2u < channel.nextReceive.size(); ++i) {
+    if (channel.nextReceive[i] == 0xAA) {
+      channel.nextReceive[i + 2u] = 0x81;
+      break;
+    }
+  }
+
+  FakeHlsStrategy strategy;
+  dlms::association::AssociationOptions options =
+    dlms::association::DefaultAssociationOptions();
+  options.authenticationMode =
+    dlms::association::AuthenticationMode::HighLevelSecurity;
+  options.highLevelSecurity = &strategy;
+
+  dlms::association::AssociationClient client(channel, options);
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  EXPECT_EQ(dlms::association::AssociationStatus::DecodeFailed,
+            client.Establish());
+  EXPECT_EQ(dlms::association::AssociationState::Open, client.State());
 }
 
 TEST(AssociationClient, RepeatedEstablishReportsAlreadyAssociated)

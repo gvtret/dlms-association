@@ -34,6 +34,7 @@ AssociationResult EmptyAssociationResult()
   result.aareResult = 0;
   result.hasAareDiagnostic = false;
   result.aareDiagnostic = 0;
+  result.highLevelSecurityServerChallenge.clear();
   return result;
 }
 
