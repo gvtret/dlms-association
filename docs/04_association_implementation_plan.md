@@ -69,3 +69,21 @@ Commit messages:
 docs(association): specify authentication boundary
 feat(association): model authentication boundary
 ```
+
+## Phase 5. LLS AARQ Authentication
+
+Deliverables:
+
+- documentation-first contract for LLS ACSE fields
+- validation that accepts non-empty LLS credentials
+- AARQ sender ACSE requirements field
+- AARQ low-level-security mechanism name field
+- AARQ calling authentication value field
+- tests for exact credential preservation
+
+Commit messages:
+
+```text
+docs(association): define LLS AARQ authentication
+feat(association): encode LLS AARQ authentication
+```

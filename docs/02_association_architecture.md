@@ -118,7 +118,7 @@ sequenceDiagram
   alt None
     Assoc->>Apdu: Encode AARQ without authentication fields
   else LLS
-    Assoc-->>App: UnsupportedAuthentication until ACSE auth encode exists
+    Assoc->>Apdu: Add ACSE requirements, mechanism name, credential
   else HLS
     Assoc->>Hls: Mechanism()
     Assoc->>Hls: BuildInitialChallenge()
@@ -126,7 +126,7 @@ sequenceDiagram
   end
 ```
 
-`dlms-association` owns only the association state machine and option
-validation. Authentication mechanism OIDs, ACSE authentication fields,
-challenge functions, ciphering, keys, and invocation counters remain delegated
-to `dlms-apdu` or a future security layer.
+`dlms-association` owns only the association state machine, option validation,
+and raw LLS ACSE authentication field selection. HLS challenge functions,
+ciphering, keys, and invocation counters remain delegated to future client and
+security composition.

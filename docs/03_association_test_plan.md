@@ -27,7 +27,8 @@ Required first-phase tests:
 - C API public header compiles as C
 - default authentication boundary has no LLS credential and no HLS strategy
 - LLS without credential returns `UnsupportedAuthentication`
-- LLS with credential is modeled but rejected until ACSE auth encoding exists
+- LLS with credential sends ACSE authentication fields in the AARQ
+- LLS AARQ preserves credential bytes exactly
 - HLS without strategy returns `UnsupportedAuthentication`
 - HLS strategy failures return `UnsupportedAuthentication`
 - HLS unsupported mechanisms return `UnsupportedAuthentication`

@@ -109,9 +109,9 @@ leaving ACSE authentication encoding and HLS cryptography outside this repo.
 
 LLS is represented by a caller-owned credential byte vector. Establishing an
 LLS association without a credential returns `UnsupportedAuthentication`.
-Establishing with a credential is also rejected until `dlms-apdu` exposes ACSE
-authentication field encoding. This keeps the public option contract stable
-without fabricating partial AARQ authentication bytes in this layer.
+Establishing with a credential sends the bytes exactly as supplied in the ACSE
+calling-authentication-value field and proposes the COSEM low-level-security
+mechanism name.
 
 HLS is represented by a non-owning `IHighLevelSecurityStrategy` pointer. The
 strategy supplies the mechanism and initial client-to-server challenge for the

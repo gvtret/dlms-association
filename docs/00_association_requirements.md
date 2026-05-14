@@ -76,8 +76,7 @@ The phase 4 boundary shall:
 - keep `None` as the default lowest-level security mode
 - model Low Level Security (LLS) credentials in `AssociationOptions`
 - reject LLS when no credential is configured
-- reject LLS at establish time until `dlms-apdu` exposes ACSE authentication
-  field encoding
+- encode LLS AARQ authentication fields when a credential is configured
 - model High Level Security (HLS) as a delegated strategy interface
 - reject HLS when no strategy is configured
 - let the strategy validate the selected HLS mechanism and provide the initial
@@ -86,6 +85,10 @@ The phase 4 boundary shall:
   future client/object layer exists
 - keep global ciphering, dedicated ciphering, keys, invocation counters, and
   security suite algorithms outside this repo
+
+LLS credentials are caller-supplied bytes. The association layer shall send
+them exactly as supplied in the ACSE calling-authentication-value field. It
+shall not hash, derive, persist, or otherwise transform the credential.
 
 ## 6. Out of Scope
 
