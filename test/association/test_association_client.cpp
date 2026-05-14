@@ -512,14 +512,15 @@ TEST(AssociationClient, HighLevelSecurityUnsupportedMechanismIsRejected)
   EXPECT_EQ(0, channel.sendCalls);
 }
 
-TEST(AssociationClient, HighLevelSecurityMd5AndSha1UseMechanismIds)
+TEST(AssociationClient, HighLevelSecurityMechanismsUseMechanismIds)
 {
   const dlms::association::HighLevelSecurityMechanism mechanisms[] = {
+    dlms::association::HighLevelSecurityMechanism::HlsHigh,
     dlms::association::HighLevelSecurityMechanism::HlsMd5,
     dlms::association::HighLevelSecurityMechanism::HlsSha1};
-  const std::uint8_t ids[] = {0x03, 0x04};
+  const std::uint8_t ids[] = {0x02, 0x03, 0x04};
 
-  for (std::size_t i = 0u; i < 2u; ++i) {
+  for (std::size_t i = 0u; i < 3u; ++i) {
     FakeApduChannel channel;
     channel.nextReceive = MakeAareBytes(0);
     FakeHlsStrategy strategy;

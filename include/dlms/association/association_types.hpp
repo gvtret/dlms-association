@@ -32,6 +32,7 @@ enum class AuthenticationMode
 enum class HighLevelSecurityMechanism
 {
   Unknown,
+  HlsHigh,
   HlsMd5,
   HlsSha1,
   HlsGmac

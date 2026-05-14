@@ -27,6 +27,9 @@ bool HlsMechanismId(
   std::uint8_t& mechanismId)
 {
   switch (mechanism) {
+  case HighLevelSecurityMechanism::HlsHigh:
+    mechanismId = 2u;
+    return true;
   case HighLevelSecurityMechanism::HlsMd5:
     mechanismId = 3u;
     return true;

@@ -106,6 +106,8 @@ dlms::association::HighLevelSecurityMechanism ToCppHlsMechanism(
   dlms_association_hls_mechanism_t mechanism)
 {
   switch (mechanism) {
+  case DLMS_ASSOCIATION_HLS_MECHANISM_HIGH:
+    return dlms::association::HighLevelSecurityMechanism::HlsHigh;
   case DLMS_ASSOCIATION_HLS_MECHANISM_MD5:
     return dlms::association::HighLevelSecurityMechanism::HlsMd5;
   case DLMS_ASSOCIATION_HLS_MECHANISM_SHA1:

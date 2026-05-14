@@ -54,7 +54,8 @@ typedef enum dlms_association_hls_mechanism_t
   DLMS_ASSOCIATION_HLS_MECHANISM_UNKNOWN = 0,
   DLMS_ASSOCIATION_HLS_MECHANISM_MD5 = 1,
   DLMS_ASSOCIATION_HLS_MECHANISM_SHA1 = 2,
-  DLMS_ASSOCIATION_HLS_MECHANISM_GMAC = 3
+  DLMS_ASSOCIATION_HLS_MECHANISM_GMAC = 3,
+  DLMS_ASSOCIATION_HLS_MECHANISM_HIGH = 4
 } dlms_association_hls_mechanism_t;
 
 typedef dlms_association_hls_mechanism_t (*dlms_association_hls_mechanism_fn)(
