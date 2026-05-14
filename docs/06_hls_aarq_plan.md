@@ -13,7 +13,9 @@ It covers:
 - AARQ calling-authentication-value field containing the client-to-server
   challenge supplied by `IHighLevelSecurityStrategy`;
 - AARE responding-authentication-value server-to-client challenge extraction
-  for the caller.
+  for the caller;
+- AARE responding AP title extraction for HLS GMAC server system title
+  discovery.
 
 It does not cover:
 
@@ -76,10 +78,14 @@ the AARE responding-authentication-value field:
 
 ```cpp
 std::vector<std::uint8_t> highLevelSecurityServerChallenge;
+std::vector<std::uint8_t> respondingApplicationTitle;
 ```
 
-The vector is empty when the AARE has no HLS challenge or when no HLS mode was
-used.
+The challenge vector is empty when the AARE has no HLS challenge or when no HLS
+mode was used. The responding application title vector is empty when the AARE
+does not carry a responding AP title. For HLS GMAC, clients may use an 8-byte
+responding application title as the remote system title for pass-4
+verification.
 
 ## 4. Validation
 
@@ -121,6 +127,18 @@ AA <size + 2> 80 <size> <server_challenge_bytes>
 Malformed authentication value fields shall be ignored for non-HLS modes and
 shall return `DecodeFailed` for HLS mode.
 
+`DecodeAare()` shall also scan raw AARE fields for responding AP title values.
+Meters commonly encode the server system title as a constructed context field
+wrapping an ASN.1 octet string:
+
+```text
+A4 0A 04 08 <server_system_title>
+A6 0A 04 08 <server_system_title>
+```
+
+Both tags are accepted because field naming differs between ACSE specs and
+legacy stacks. The decoded value is exposed without transforming the bytes.
+
 ## 7. Test Plan
 
 Deterministic tests shall cover:
@@ -134,6 +152,7 @@ Deterministic tests shall cover:
   fail before send;
 - strategy is called once for a successful HLS AARQ build;
 - AARE HLS server challenge is exposed in `AssociationResult`;
+- AARE responding AP title is exposed in `AssociationResult`;
 - malformed AARE HLS authentication value returns `DecodeFailed`.
 
 Root verification remains:
