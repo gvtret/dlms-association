@@ -160,6 +160,20 @@ std::vector<std::uint8_t> MakeRlreBytes()
   return std::vector<std::uint8_t>(kRlre, kRlre + sizeof(kRlre));
 }
 
+std::vector<std::uint8_t> FieldBytes(
+  const dlms::apdu::AarqApdu& aarq,
+  std::uint8_t tag)
+{
+  for (std::size_t i = 0u; i < aarq.fields.size(); ++i) {
+    if (aarq.fields[i].tag == tag) {
+      return std::vector<std::uint8_t>(
+        aarq.fields[i].encoded.data,
+        aarq.fields[i].encoded.data + aarq.fields[i].encoded.size);
+    }
+  }
+  return std::vector<std::uint8_t>();
+}
+
 } // namespace
 
 TEST(AssociationClient, EstablishRequiresOpenChannel)
@@ -286,9 +300,10 @@ TEST(AssociationClient, LowLevelSecurityWithoutCredentialIsRejectedBeforeSend)
   EXPECT_EQ(0, channel.sendCalls);
 }
 
-TEST(AssociationClient, LowLevelSecurityCredentialIsModeledButRejected)
+TEST(AssociationClient, LowLevelSecurityCredentialAddsAarqAuthFields)
 {
   FakeApduChannel channel;
+  channel.nextReceive = MakeAareBytes(0);
   dlms::association::AssociationOptions options =
     dlms::association::DefaultAssociationOptions();
   options.authenticationMode =
@@ -299,7 +314,53 @@ TEST(AssociationClient, LowLevelSecurityCredentialIsModeledButRejected)
   dlms::association::AssociationClient client(channel, options);
 
   ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
-  EXPECT_EQ(dlms::association::AssociationStatus::UnsupportedAuthentication,
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Establish());
+  ASSERT_EQ(1, channel.sendCalls);
+
+  dlms::apdu::AcseApdu sent = {};
+  ASSERT_EQ(dlms::apdu::ApduStatus::Ok,
+            dlms::apdu::DecodeAcseApdu(
+              &channel.sent[0],
+              channel.sent.size(),
+              sent));
+  ASSERT_EQ(dlms::apdu::AcseApduKind::Aarq, sent.kind);
+
+  const std::uint8_t expectedRequirements[] = {0x8A, 0x02, 0x07, 0x80};
+  const std::uint8_t expectedMechanism[] = {
+    0x8B, 0x07, 0x60, 0x85, 0x74, 0x05, 0x08, 0x02, 0x01};
+  const std::uint8_t expectedCredential[] = {
+    0xAC, 0x04, 0x80, 0x02, 'p', 'w'};
+
+  EXPECT_EQ(
+    std::vector<std::uint8_t>(
+      expectedRequirements,
+      expectedRequirements + sizeof(expectedRequirements)),
+    FieldBytes(sent.aarq, 0x8A));
+  EXPECT_EQ(
+    std::vector<std::uint8_t>(
+      expectedMechanism,
+      expectedMechanism + sizeof(expectedMechanism)),
+    FieldBytes(sent.aarq, 0x8B));
+  EXPECT_EQ(
+    std::vector<std::uint8_t>(
+      expectedCredential,
+      expectedCredential + sizeof(expectedCredential)),
+    FieldBytes(sent.aarq, 0xAC));
+}
+
+TEST(AssociationClient, LowLevelSecurityRejectsCredentialTooLargeForShortBer)
+{
+  FakeApduChannel channel;
+  dlms::association::AssociationOptions options =
+    dlms::association::DefaultAssociationOptions();
+  options.authenticationMode =
+    dlms::association::AuthenticationMode::LowLevelSecurity;
+  options.lowLevelSecurityCredential.assign(126u, 'x');
+
+  dlms::association::AssociationClient client(channel, options);
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  EXPECT_EQ(dlms::association::AssociationStatus::InvalidArgument,
             client.Establish());
   EXPECT_EQ(0, channel.sendCalls);
 }

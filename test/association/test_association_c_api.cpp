@@ -156,6 +156,20 @@ dlms_association_hls_callbacks_t MakeHlsCallbacks()
   return callbacks;
 }
 
+std::vector<std::uint8_t> FieldBytes(
+  const dlms::apdu::AarqApdu& aarq,
+  std::uint8_t tag)
+{
+  for (std::size_t i = 0u; i < aarq.fields.size(); ++i) {
+    if (aarq.fields[i].tag == tag) {
+      return std::vector<std::uint8_t>(
+        aarq.fields[i].encoded.data,
+        aarq.fields[i].encoded.data + aarq.fields[i].encoded.size);
+    }
+  }
+  return std::vector<std::uint8_t>();
+}
+
 } // namespace
 
 TEST(AssociationCApi, StatusValuesMatchCppContract)
@@ -234,11 +248,12 @@ TEST(AssociationCApi, CallbackClientLifecycle)
   dlms_association_destroy_client(client);
 }
 
-TEST(AssociationCApi, LowLevelSecurityCredentialIsCopiedAndRejected)
+TEST(AssociationCApi, LowLevelSecurityCredentialIsCopiedAndEncoded)
 {
   CallbackChannel channel;
   channel.open = false;
   channel.receiveStatus = DLMS_ASSOCIATION_STATUS_OK;
+  channel.receives.push_back(MakeAareBytes());
 
   const std::uint8_t credential[] = {'p', 'w'};
   dlms_association_options_t options;
@@ -254,9 +269,24 @@ TEST(AssociationCApi, LowLevelSecurityCredentialIsCopiedAndRejected)
   ASSERT_NE(nullptr, client);
 
   EXPECT_EQ(DLMS_ASSOCIATION_STATUS_OK, dlms_association_open(client));
-  EXPECT_EQ(DLMS_ASSOCIATION_STATUS_UNSUPPORTED_AUTHENTICATION,
-            dlms_association_establish(client));
-  EXPECT_TRUE(channel.sends.empty());
+  EXPECT_EQ(DLMS_ASSOCIATION_STATUS_OK, dlms_association_establish(client));
+  ASSERT_EQ(1u, channel.sends.size());
+
+  dlms::apdu::AcseApdu sent = {};
+  ASSERT_EQ(dlms::apdu::ApduStatus::Ok,
+            dlms::apdu::DecodeAcseApdu(
+              &channel.sends[0][0],
+              channel.sends[0].size(),
+              sent));
+  ASSERT_EQ(dlms::apdu::AcseApduKind::Aarq, sent.kind);
+
+  const std::uint8_t expectedCredential[] = {
+    0xAC, 0x04, 0x80, 0x02, 'p', 'w'};
+  EXPECT_EQ(
+    std::vector<std::uint8_t>(
+      expectedCredential,
+      expectedCredential + sizeof(expectedCredential)),
+    FieldBytes(sent.aarq, 0xAC));
 
   dlms_association_destroy_client(client);
 }

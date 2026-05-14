@@ -9,6 +9,11 @@ namespace association {
 
 namespace {
 
+constexpr std::uint8_t kSenderAcseRequirementsTag = 0x8A;
+constexpr std::uint8_t kMechanismNameTag = 0x8B;
+constexpr std::uint8_t kCallingAuthenticationValueTag = 0xAC;
+constexpr std::uint8_t kCharstringAuthenticationValueTag = 0x80;
+
 bool IsProfileOk(dlms::profile::ProfileStatus status)
 {
   return status == dlms::profile::ProfileStatus::Ok ||
@@ -20,6 +25,74 @@ bool IsSupportedHlsMechanism(HighLevelSecurityMechanism mechanism)
   return mechanism == HighLevelSecurityMechanism::HlsMd5 ||
          mechanism == HighLevelSecurityMechanism::HlsSha1 ||
          mechanism == HighLevelSecurityMechanism::HlsGmac;
+}
+
+dlms::apdu::ByteView MakeByteView(const std::vector<std::uint8_t>& bytes)
+{
+  dlms::apdu::ByteView view = {};
+  view.data = bytes.empty() ? 0 : &bytes[0];
+  view.size = bytes.size();
+  return view;
+}
+
+std::vector<std::uint8_t> MakeSenderAcseRequirementsField()
+{
+  const std::uint8_t field[] = {
+    kSenderAcseRequirementsTag,
+    0x02,
+    0x07,
+    0x80};
+  return std::vector<std::uint8_t>(field, field + sizeof(field));
+}
+
+std::vector<std::uint8_t> MakeLowLevelSecurityMechanismField()
+{
+  const std::uint8_t field[] = {
+    kMechanismNameTag,
+    0x07,
+    0x60,
+    0x85,
+    0x74,
+    0x05,
+    0x08,
+    0x02,
+    0x01};
+  return std::vector<std::uint8_t>(field, field + sizeof(field));
+}
+
+std::vector<std::uint8_t> MakeCallingAuthenticationValueField(
+  const std::vector<std::uint8_t>& credential)
+{
+  std::vector<std::uint8_t> field;
+  field.reserve(4u + credential.size());
+  field.push_back(kCallingAuthenticationValueTag);
+  field.push_back(static_cast<std::uint8_t>(credential.size() + 2u));
+  field.push_back(kCharstringAuthenticationValueTag);
+  field.push_back(static_cast<std::uint8_t>(credential.size()));
+  field.insert(field.end(), credential.begin(), credential.end());
+  return field;
+}
+
+void AddLlsAuthenticationFields(
+  const AssociationOptions& options,
+  dlms::apdu::AarqApdu& aarq,
+  std::vector<std::vector<std::uint8_t> >& encodedFields)
+{
+  if (options.authenticationMode != AuthenticationMode::LowLevelSecurity) {
+    return;
+  }
+
+  encodedFields.push_back(MakeSenderAcseRequirementsField());
+  encodedFields.push_back(MakeLowLevelSecurityMechanismField());
+  encodedFields.push_back(
+    MakeCallingAuthenticationValueField(options.lowLevelSecurityCredential));
+
+  for (std::size_t i = 0u; i < encodedFields.size(); ++i) {
+    dlms::apdu::AcseRawField field = {};
+    field.tag = encodedFields[i].empty() ? 0u : encodedFields[i][0];
+    field.encoded = MakeByteView(encodedFields[i]);
+    aarq.fields.push_back(field);
+  }
 }
 
 } // namespace
@@ -179,8 +252,10 @@ AssociationStatus AssociationClient::BuildAarq(
   request.clientMaxReceivePduSize = options_.clientMaxReceivePduSize;
 
   const dlms::apdu::XdlmsApdu xdlms(request);
-  const dlms::apdu::AcseApdu aarq =
+  dlms::apdu::AcseApdu aarq =
     dlms::apdu::MakeAarqWithInitiateRequest(xdlms);
+  std::vector<std::vector<std::uint8_t> > encodedFields;
+  AddLlsAuthenticationFields(options_, aarq.aarq, encodedFields);
 
   const dlms::apdu::ApduStatus status =
     dlms::apdu::EncodeAcseApdu(aarq, output);
@@ -267,7 +342,9 @@ AssociationStatus AssociationClient::ValidateOptions() const
     if (options_.lowLevelSecurityCredential.empty()) {
       return AssociationStatus::UnsupportedAuthentication;
     }
-    return AssociationStatus::UnsupportedAuthentication;
+    if (options_.lowLevelSecurityCredential.size() > 125u) {
+      return AssociationStatus::InvalidArgument;
+    }
   }
 
   if (options_.authenticationMode == AuthenticationMode::HighLevelSecurity) {
