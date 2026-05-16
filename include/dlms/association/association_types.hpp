@@ -71,6 +71,8 @@ struct AssociationTraceEvent
   ApplicationContext applicationContext;
   AuthenticationMode authenticationMode;
   HighLevelSecurityMechanism hlsMechanism;
+  bool hasProposedQualityOfService;
+  std::int8_t proposedQualityOfService;
   std::uint8_t proposedDlmsVersionNumber;
   dlms::apdu::AxdrConformance proposedConformance;
   std::uint16_t clientMaxReceivePduSize;
@@ -97,6 +99,8 @@ struct AssociationOptions
   std::vector<std::uint8_t> lowLevelSecurityCredential;
   const IHighLevelSecurityStrategy* highLevelSecurity;
   IAssociationTraceSink* traceSink;
+  bool hasProposedQualityOfService;
+  std::int8_t proposedQualityOfService;
   std::uint8_t proposedDlmsVersionNumber;
   dlms::apdu::AxdrConformance proposedConformance;
   std::uint16_t clientMaxReceivePduSize;

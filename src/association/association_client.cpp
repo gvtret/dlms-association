@@ -102,6 +102,9 @@ void EmitAssociationTrace(
   event.applicationContext = options.applicationContext;
   event.authenticationMode = options.authenticationMode;
   event.hlsMechanism = hlsMechanism;
+  event.hasProposedQualityOfService =
+    options.hasProposedQualityOfService;
+  event.proposedQualityOfService = options.proposedQualityOfService;
   event.proposedDlmsVersionNumber = options.proposedDlmsVersionNumber;
   event.proposedConformance = options.proposedConformance;
   event.clientMaxReceivePduSize = options.clientMaxReceivePduSize;
@@ -448,6 +451,9 @@ AssociationStatus AssociationClient::BuildAarq(
 {
   dlms::apdu::InitiateRequest request =
     dlms::apdu::MakeDefaultInitiateRequest();
+  request.hasProposedQualityOfService =
+    options_.hasProposedQualityOfService;
+  request.proposedQualityOfService = options_.proposedQualityOfService;
   request.proposedDlmsVersionNumber = options_.proposedDlmsVersionNumber;
   request.proposedConformance = options_.proposedConformance;
   request.clientMaxReceivePduSize = options_.clientMaxReceivePduSize;

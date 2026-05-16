@@ -145,6 +145,8 @@ public:
     dlms::association::AssociationStatus status;
     dlms::association::AuthenticationMode authenticationMode;
     dlms::association::HighLevelSecurityMechanism hlsMechanism;
+    bool hasProposedQualityOfService;
+    std::int8_t proposedQualityOfService;
     std::uint8_t proposedDlmsVersionNumber;
     dlms::apdu::AxdrConformance proposedConformance;
     std::uint16_t clientMaxReceivePduSize;
@@ -161,6 +163,9 @@ public:
     copy.status = event.status;
     copy.authenticationMode = event.authenticationMode;
     copy.hlsMechanism = event.hlsMechanism;
+    copy.hasProposedQualityOfService =
+      event.hasProposedQualityOfService;
+    copy.proposedQualityOfService = event.proposedQualityOfService;
     copy.proposedDlmsVersionNumber = event.proposedDlmsVersionNumber;
     copy.proposedConformance = event.proposedConformance;
     copy.clientMaxReceivePduSize = event.clientMaxReceivePduSize;
@@ -262,6 +267,7 @@ TEST(AssociationClient, SuccessfulEstablishSendsAarqAndStoresResult)
               channel.sent.size(),
               sent));
   EXPECT_EQ(dlms::apdu::AcseApduKind::Aarq, sent.kind);
+  EXPECT_FALSE(sent.aarq.initiateRequest.hasProposedQualityOfService);
   EXPECT_EQ(6u, sent.aarq.initiateRequest.proposedDlmsVersionNumber);
 
   const dlms::association::AssociationResult& result = client.Result();
@@ -293,11 +299,58 @@ TEST(AssociationClient, TraceReportsNoAuthAarqMetadata)
             trace.events[0].status);
   EXPECT_EQ(dlms::association::AuthenticationMode::None,
             trace.events[0].authenticationMode);
+  EXPECT_FALSE(trace.events[0].hasProposedQualityOfService);
   EXPECT_EQ(6u, trace.events[0].proposedDlmsVersionNumber);
   EXPECT_EQ(options.clientMaxReceivePduSize,
             trace.events[0].clientMaxReceivePduSize);
   EXPECT_EQ(channel.sent.size(), trace.events[0].encodedAarqSize);
   EXPECT_EQ(0u, trace.events[0].callingAuthenticationValueSize);
+}
+
+TEST(AssociationClient, ConfiguredQualityOfServiceIsSentInAarq)
+{
+  FakeApduChannel channel;
+  channel.nextReceive = MakeAareBytes(0);
+  dlms::association::AssociationOptions options =
+    dlms::association::DefaultAssociationOptions();
+  options.hasProposedQualityOfService = true;
+  options.proposedQualityOfService = 1;
+
+  dlms::association::AssociationClient client(channel, options);
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Establish());
+
+  dlms::apdu::AcseApdu sent = {};
+  ASSERT_EQ(dlms::apdu::ApduStatus::Ok,
+            dlms::apdu::DecodeAcseApdu(
+              &channel.sent[0],
+              channel.sent.size(),
+              sent));
+  ASSERT_EQ(dlms::apdu::AcseApduKind::Aarq, sent.kind);
+  EXPECT_TRUE(sent.aarq.initiateRequest.hasProposedQualityOfService);
+  EXPECT_EQ(1, sent.aarq.initiateRequest.proposedQualityOfService);
+}
+
+TEST(AssociationClient, TraceReportsConfiguredQualityOfService)
+{
+  FakeApduChannel channel;
+  channel.nextReceive = MakeAareBytes(0);
+  RecordingAssociationTraceSink trace;
+  dlms::association::AssociationOptions options =
+    dlms::association::DefaultAssociationOptions();
+  options.hasProposedQualityOfService = true;
+  options.proposedQualityOfService = 1;
+  options.traceSink = &trace;
+
+  dlms::association::AssociationClient client(channel, options);
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Establish());
+
+  ASSERT_EQ(1u, trace.events.size());
+  EXPECT_TRUE(trace.events[0].hasProposedQualityOfService);
+  EXPECT_EQ(1, trace.events[0].proposedQualityOfService);
 }
 
 TEST(AssociationClient, RejectedAareReturnsToOpen)
