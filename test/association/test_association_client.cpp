@@ -135,6 +135,47 @@ public:
   std::vector<std::uint8_t> nextReceive;
 };
 
+class RecordingAssociationTraceSink
+  : public dlms::association::IAssociationTraceSink
+{
+public:
+  struct EventCopy
+  {
+    dlms::association::AssociationTraceKind kind;
+    dlms::association::AssociationStatus status;
+    dlms::association::AuthenticationMode authenticationMode;
+    dlms::association::HighLevelSecurityMechanism hlsMechanism;
+    std::uint8_t proposedDlmsVersionNumber;
+    dlms::apdu::AxdrConformance proposedConformance;
+    std::uint16_t clientMaxReceivePduSize;
+    std::size_t encodedAarqSize;
+    std::size_t callingAuthenticationValueSize;
+    std::vector<dlms::association::AssociationTraceField> fields;
+  };
+
+  void OnAssociationTrace(
+    const dlms::association::AssociationTraceEvent& event)
+  {
+    EventCopy copy = {};
+    copy.kind = event.kind;
+    copy.status = event.status;
+    copy.authenticationMode = event.authenticationMode;
+    copy.hlsMechanism = event.hlsMechanism;
+    copy.proposedDlmsVersionNumber = event.proposedDlmsVersionNumber;
+    copy.proposedConformance = event.proposedConformance;
+    copy.clientMaxReceivePduSize = event.clientMaxReceivePduSize;
+    copy.encodedAarqSize = event.encodedAarqSize;
+    copy.callingAuthenticationValueSize =
+      event.callingAuthenticationValueSize;
+    if (event.fields != 0) {
+      copy.fields.assign(event.fields, event.fields + event.fieldCount);
+    }
+    events.push_back(copy);
+  }
+
+  std::vector<EventCopy> events;
+};
+
 std::vector<std::uint8_t> MakeAareBytes(std::int32_t result)
 {
   const std::uint8_t kAare[] = {
@@ -231,6 +272,34 @@ TEST(AssociationClient, SuccessfulEstablishSendsAarqAndStoresResult)
   EXPECT_EQ(0, result.aareResult);
 }
 
+TEST(AssociationClient, TraceReportsNoAuthAarqMetadata)
+{
+  FakeApduChannel channel;
+  channel.nextReceive = MakeAareBytes(0);
+  RecordingAssociationTraceSink trace;
+  dlms::association::AssociationOptions options =
+    dlms::association::DefaultAssociationOptions();
+  options.traceSink = &trace;
+
+  dlms::association::AssociationClient client(channel, options);
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Establish());
+
+  ASSERT_EQ(1u, trace.events.size());
+  EXPECT_EQ(dlms::association::AssociationTraceKind::AarqBuilt,
+            trace.events[0].kind);
+  EXPECT_EQ(dlms::association::AssociationStatus::Ok,
+            trace.events[0].status);
+  EXPECT_EQ(dlms::association::AuthenticationMode::None,
+            trace.events[0].authenticationMode);
+  EXPECT_EQ(6u, trace.events[0].proposedDlmsVersionNumber);
+  EXPECT_EQ(options.clientMaxReceivePduSize,
+            trace.events[0].clientMaxReceivePduSize);
+  EXPECT_EQ(channel.sent.size(), trace.events[0].encodedAarqSize);
+  EXPECT_EQ(0u, trace.events[0].callingAuthenticationValueSize);
+}
+
 TEST(AssociationClient, RejectedAareReturnsToOpen)
 {
   FakeApduChannel channel;
@@ -267,15 +336,26 @@ TEST(AssociationClient, ReceiveFailureReturnsReceiveFailed)
 {
   FakeApduChannel channel;
   channel.receiveStatus = dlms::profile::ProfileStatus::Timeout;
+  RecordingAssociationTraceSink trace;
+  dlms::association::AssociationOptions options =
+    dlms::association::DefaultAssociationOptions();
+  options.traceSink = &trace;
 
   dlms::association::AssociationClient client(
     channel,
-    dlms::association::DefaultAssociationOptions());
+    options);
 
   ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
   EXPECT_EQ(dlms::association::AssociationStatus::ReceiveFailed,
             client.Establish());
   EXPECT_EQ(dlms::association::AssociationState::Open, client.State());
+  ASSERT_EQ(2u, trace.events.size());
+  EXPECT_EQ(dlms::association::AssociationTraceKind::AarqBuilt,
+            trace.events[0].kind);
+  EXPECT_EQ(dlms::association::AssociationTraceKind::AareReceiveFailed,
+            trace.events[1].kind);
+  EXPECT_EQ(dlms::association::AssociationStatus::ReceiveFailed,
+            trace.events[1].status);
 }
 
 TEST(AssociationClient, UnsupportedAuthenticationIsRejectedBeforeSend)
@@ -358,6 +438,34 @@ TEST(AssociationClient, LowLevelSecurityCredentialAddsAarqAuthFields)
     FieldBytes(sent.aarq, 0xAC));
 }
 
+TEST(AssociationClient, TraceReportsLlsCredentialLengthOnly)
+{
+  FakeApduChannel channel;
+  channel.nextReceive = MakeAareBytes(0);
+  RecordingAssociationTraceSink trace;
+  dlms::association::AssociationOptions options =
+    dlms::association::DefaultAssociationOptions();
+  options.authenticationMode =
+    dlms::association::AuthenticationMode::LowLevelSecurity;
+  options.lowLevelSecurityCredential.push_back('p');
+  options.lowLevelSecurityCredential.push_back('w');
+  options.traceSink = &trace;
+
+  dlms::association::AssociationClient client(channel, options);
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Establish());
+
+  ASSERT_EQ(1u, trace.events.size());
+  EXPECT_EQ(dlms::association::AuthenticationMode::LowLevelSecurity,
+            trace.events[0].authenticationMode);
+  EXPECT_EQ(2u, trace.events[0].callingAuthenticationValueSize);
+  ASSERT_EQ(3u, trace.events[0].fields.size());
+  EXPECT_EQ(0x8Au, trace.events[0].fields[0].tag);
+  EXPECT_EQ(0x8Bu, trace.events[0].fields[1].tag);
+  EXPECT_EQ(0xACu, trace.events[0].fields[2].tag);
+}
+
 TEST(AssociationClient, LowLevelSecurityRejectsCredentialTooLargeForShortBer)
 {
   FakeApduChannel channel;
@@ -435,6 +543,35 @@ TEST(AssociationClient, HighLevelSecurityGmacAddsAarqAuthFields)
       expectedServerChallenge,
       expectedServerChallenge + sizeof(expectedServerChallenge)),
     client.Result().highLevelSecurityServerChallenge);
+}
+
+TEST(AssociationClient, TraceReportsHlsMechanismAndChallengeLengthOnly)
+{
+  FakeApduChannel channel;
+  channel.nextReceive = MakeAareBytes(0);
+  RecordingAssociationTraceSink trace;
+  FakeHlsStrategy strategy;
+  strategy.mechanism =
+    dlms::association::HighLevelSecurityMechanism::HlsHigh;
+  strategy.challenge.assign(8u, 0xA5u);
+  dlms::association::AssociationOptions options =
+    dlms::association::DefaultAssociationOptions();
+  options.authenticationMode =
+    dlms::association::AuthenticationMode::HighLevelSecurity;
+  options.highLevelSecurity = &strategy;
+  options.traceSink = &trace;
+
+  dlms::association::AssociationClient client(channel, options);
+
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Open());
+  ASSERT_EQ(dlms::association::AssociationStatus::Ok, client.Establish());
+
+  ASSERT_EQ(1u, trace.events.size());
+  EXPECT_EQ(dlms::association::AuthenticationMode::HighLevelSecurity,
+            trace.events[0].authenticationMode);
+  EXPECT_EQ(dlms::association::HighLevelSecurityMechanism::HlsHigh,
+            trace.events[0].hlsMechanism);
+  EXPECT_EQ(8u, trace.events[0].callingAuthenticationValueSize);
 }
 
 TEST(AssociationClient, AareRespondingApplicationTitleIsExposed)

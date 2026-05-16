@@ -3,6 +3,7 @@
 #include "dlms/apdu/axdr.hpp"
 #include "dlms/association/association_status.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -50,12 +51,52 @@ public:
     std::vector<std::uint8_t>& output) const = 0;
 };
 
+enum class AssociationTraceKind
+{
+  AarqBuilt,
+  AarqBuildFailed,
+  AareReceiveFailed
+};
+
+struct AssociationTraceField
+{
+  std::uint8_t tag;
+  std::size_t encodedSize;
+};
+
+struct AssociationTraceEvent
+{
+  AssociationTraceKind kind;
+  AssociationStatus status;
+  ApplicationContext applicationContext;
+  AuthenticationMode authenticationMode;
+  HighLevelSecurityMechanism hlsMechanism;
+  std::uint8_t proposedDlmsVersionNumber;
+  dlms::apdu::AxdrConformance proposedConformance;
+  std::uint16_t clientMaxReceivePduSize;
+  std::size_t encodedAarqSize;
+  std::size_t callingAuthenticationValueSize;
+  const AssociationTraceField* fields;
+  std::size_t fieldCount;
+};
+
+class IAssociationTraceSink
+{
+public:
+  virtual ~IAssociationTraceSink()
+  {
+  }
+
+  virtual void OnAssociationTrace(const AssociationTraceEvent& event) = 0;
+};
+
 struct AssociationOptions
 {
   ApplicationContext applicationContext;
   AuthenticationMode authenticationMode;
   std::vector<std::uint8_t> lowLevelSecurityCredential;
   const IHighLevelSecurityStrategy* highLevelSecurity;
+  IAssociationTraceSink* traceSink;
   std::uint8_t proposedDlmsVersionNumber;
   dlms::apdu::AxdrConformance proposedConformance;
   std::uint16_t clientMaxReceivePduSize;

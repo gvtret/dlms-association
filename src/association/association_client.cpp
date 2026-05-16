@@ -56,6 +56,62 @@ dlms::apdu::ByteView MakeByteView(const std::vector<std::uint8_t>& bytes)
   return view;
 }
 
+std::size_t CallingAuthenticationValueSize(
+  const dlms::apdu::AarqApdu& aarq)
+{
+  for (std::size_t i = 0u; i < aarq.fields.size(); ++i) {
+    const dlms::apdu::AcseRawField& field = aarq.fields[i];
+    if (field.tag == kCallingAuthenticationValueTag &&
+        field.encoded.data != 0 &&
+        field.encoded.size >= 4u) {
+      return field.encoded.data[3];
+    }
+  }
+  return 0u;
+}
+
+void EmitAssociationTrace(
+  IAssociationTraceSink* sink,
+  AssociationTraceKind kind,
+  AssociationStatus status,
+  const AssociationOptions& options,
+  HighLevelSecurityMechanism hlsMechanism,
+  const dlms::apdu::AarqApdu* aarq,
+  std::size_t encodedAarqSize)
+{
+  if (sink == 0) {
+    return;
+  }
+
+  std::vector<AssociationTraceField> fields;
+  std::size_t authValueSize = 0u;
+  if (aarq != 0) {
+    fields.reserve(aarq->fields.size());
+    for (std::size_t i = 0u; i < aarq->fields.size(); ++i) {
+      AssociationTraceField field = {};
+      field.tag = aarq->fields[i].tag;
+      field.encodedSize = aarq->fields[i].encoded.size;
+      fields.push_back(field);
+    }
+    authValueSize = CallingAuthenticationValueSize(*aarq);
+  }
+
+  AssociationTraceEvent event = {};
+  event.kind = kind;
+  event.status = status;
+  event.applicationContext = options.applicationContext;
+  event.authenticationMode = options.authenticationMode;
+  event.hlsMechanism = hlsMechanism;
+  event.proposedDlmsVersionNumber = options.proposedDlmsVersionNumber;
+  event.proposedConformance = options.proposedConformance;
+  event.clientMaxReceivePduSize = options.clientMaxReceivePduSize;
+  event.encodedAarqSize = encodedAarqSize;
+  event.callingAuthenticationValueSize = authValueSize;
+  event.fields = fields.empty() ? 0 : &fields[0];
+  event.fieldCount = fields.size();
+  sink->OnAssociationTrace(event);
+}
+
 std::vector<std::uint8_t> MakeSenderAcseRequirementsField()
 {
   const std::uint8_t field[] = {
@@ -137,7 +193,8 @@ void AddLlsAuthenticationFields(
 AssociationStatus AddHlsAuthenticationFields(
   const AssociationOptions& options,
   dlms::apdu::AarqApdu& aarq,
-  std::vector<std::vector<std::uint8_t> >& encodedFields)
+  std::vector<std::vector<std::uint8_t> >& encodedFields,
+  HighLevelSecurityMechanism& selectedMechanism)
 {
   if (options.authenticationMode != AuthenticationMode::HighLevelSecurity) {
     return AssociationStatus::Ok;
@@ -149,6 +206,7 @@ AssociationStatus AddHlsAuthenticationFields(
 
   const HighLevelSecurityMechanism mechanism =
     options.highLevelSecurity->Mechanism();
+  selectedMechanism = mechanism;
   std::uint8_t mechanismId = 0u;
   if (!HlsMechanismId(mechanism, mechanismId)) {
     return AssociationStatus::UnsupportedAuthentication;
@@ -289,6 +347,13 @@ AssociationStatus AssociationClient::Establish()
   std::vector<std::uint8_t> aarq;
   const AssociationStatus buildStatus = BuildAarq(aarq);
   if (buildStatus != AssociationStatus::Ok) {
+    EmitAssociationTrace(options_.traceSink,
+                         AssociationTraceKind::AarqBuildFailed,
+                         buildStatus,
+                         options_,
+                         HighLevelSecurityMechanism::Unknown,
+                         0,
+                         0u);
     state_ = AssociationState::Open;
     return buildStatus;
   }
@@ -303,6 +368,13 @@ AssociationStatus AssociationClient::Establish()
   std::vector<std::uint8_t> aare;
   const dlms::profile::ProfileStatus receiveStatus = channel_.ReceiveApdu(aare);
   if (receiveStatus != dlms::profile::ProfileStatus::Ok) {
+    EmitAssociationTrace(options_.traceSink,
+                         AssociationTraceKind::AareReceiveFailed,
+                         AssociationStatus::ReceiveFailed,
+                         options_,
+                         HighLevelSecurityMechanism::Unknown,
+                         0,
+                         0u);
     state_ = AssociationState::Open;
     return AssociationStatus::ReceiveFailed;
   }
@@ -385,17 +457,36 @@ AssociationStatus AssociationClient::BuildAarq(
     dlms::apdu::MakeAarqWithInitiateRequest(xdlms);
   std::vector<std::vector<std::uint8_t> > encodedFields;
   AddLlsAuthenticationFields(options_, aarq.aarq, encodedFields);
+  HighLevelSecurityMechanism hlsMechanism = HighLevelSecurityMechanism::Unknown;
   const AssociationStatus hlsStatus =
-    AddHlsAuthenticationFields(options_, aarq.aarq, encodedFields);
+    AddHlsAuthenticationFields(options_,
+                               aarq.aarq,
+                               encodedFields,
+                               hlsMechanism);
   if (hlsStatus != AssociationStatus::Ok) {
     return hlsStatus;
   }
 
   const dlms::apdu::ApduStatus status =
     dlms::apdu::EncodeAcseApdu(aarq, output);
-  return status == dlms::apdu::ApduStatus::Ok
+  const AssociationStatus associationStatus =
+    status == dlms::apdu::ApduStatus::Ok
     ? AssociationStatus::Ok
     : AssociationStatus::EncodeFailed;
+  EmitAssociationTrace(options_.traceSink,
+                       associationStatus == AssociationStatus::Ok
+                         ? AssociationTraceKind::AarqBuilt
+                         : AssociationTraceKind::AarqBuildFailed,
+                       associationStatus,
+                       options_,
+                       hlsMechanism,
+                       associationStatus == AssociationStatus::Ok
+                         ? &aarq.aarq
+                         : 0,
+                       associationStatus == AssociationStatus::Ok
+                         ? output.size()
+                         : 0u);
+  return associationStatus;
 }
 
 AssociationStatus AssociationClient::DecodeAare(
